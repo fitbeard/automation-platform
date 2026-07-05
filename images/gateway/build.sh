@@ -491,6 +491,128 @@ echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
+# 8.5 Debrand the Gateway DRF browsable API (Django backend)
+# -------------------------------------------------------------------
+# Everything above (step 8) debrands the React SPA (aap-ui/platform).
+# The Django REST Framework browsable API served at /api/ and its login
+# page at /api/gateway/v1/... render from a SEPARATE template tree in the
+# gateway backend (aap_gateway_api/templates/rest_framework/) that ships
+# Red Hat logo + favicon + copyright. Debrand it here.
+#
+# github.com/fitbeard/ansible-platform#223 reported the logo, favicon, and
+# footer copyright. We additionally fix the help link (help.redhat.com).
+# login.html `{% extends 'rest_framework/api.html' %}` and only overrides
+# breadcrumbs/content, so fixing api.html covers the login page too.
+#
+# Backend console.redhat.com references (registered_preferences.py,
+# defaults.py, status.py) are FUNCTIONAL integration endpoints/field names
+# for the RH Hybrid Cloud Console, NOT browsable-API branding — left alone.
+echo "=> Debranding Gateway DRF browsable API (Django backend)..."
+GW_API_DIR="${BUILD_DIR}/aap_gateway_api"
+GW_STATIC_IMAGES="${GW_API_DIR}/static/images"
+GW_API_TEMPLATE="${GW_API_DIR}/templates/rest_framework/api.html"
+
+if [ ! -f "${GW_API_TEMPLATE}" ]; then
+    echo "   ERROR: ${GW_API_TEMPLATE} not found — gateway source layout changed?"
+    exit 1
+fi
+
+# 8.5a — ship debranded static assets into the gateway static dir, drop RH ones
+cp "${DEBRAND_DIR}/ap-logo-white.svg" "${GW_STATIC_IMAGES}/ap-logo-white.svg"
+cp "${DEBRAND_DIR}/community-icon.svg" "${GW_STATIC_IMAGES}/community-icon.svg"
+rm -f "${GW_STATIC_IMAGES}/Logo-Red_Hat-Ansible_Automation_Platform-A-Standard-RGB.svg" \
+      "${GW_STATIC_IMAGES}/Product_icon-Red_Hat-Ansible_Automation_Platform-RGB.png"
+
+# 8.5b — single-line replacements in api.html (logo src+alt, favicon, help link)
+sedi "s|images/Logo-Red_Hat-Ansible_Automation_Platform-A-Standard-RGB.svg|images/ap-logo-white.svg|" \
+    "${GW_API_TEMPLATE}"
+sedi 's|alt="AAP Platform"|alt="Ansible Platform"|' \
+    "${GW_API_TEMPLATE}"
+sedi "s|images/Product_icon-Red_Hat-Ansible_Automation_Platform-RGB.png|images/community-icon.svg|" \
+    "${GW_API_TEMPLATE}"
+sedi 's|href="https://help.redhat.com/"|href="https://docs.ansible.com/"|' \
+    "${GW_API_TEMPLATE}"
+
+# 8.5c — remove the Red Hat copyright footer block (multi-line; anchor-guarded)
+python3 -c "
+f = '${GW_API_TEMPLATE}'
+content = open(f).read()
+footer = '''<div id=\"footer\">
+  <div class=\"container\">
+    <div class=\"footer-copyright\">
+      Copyright &copy; 2024 <a href=\"http://www.redhat.com\" target=\"_blank\" rel=\"noopener\">Red Hat</a>, Inc. All Rights Reserved.
+    </div>
+  </div>
+</div>
+'''
+if footer not in content:
+    raise SystemExit('DRF footer copyright anchor not found in api.html — upstream may have refactored')
+content = content.replace(footer, '')
+open(f, 'w').write(content)
+"
+
+# 8.5d — fail loudly if any Red Hat branding survives in the template
+if grep -qiE 'Red_Hat|redhat\.com|Red Hat|AAP Platform' "${GW_API_TEMPLATE}"; then
+    echo '   ERROR: residual Red Hat branding still present in api.html after debrand:'
+    grep -niE 'Red_Hat|redhat\.com|Red Hat|AAP Platform' "${GW_API_TEMPLATE}"
+    exit 1
+fi
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
+# 8.6 Silence "Product Notifications" (Red Hat RSS announcements feed)
+# -------------------------------------------------------------------
+# The platform UI hook platform/notifications/useRssNotifications.tsx has
+# the superuser's browser fetch an Atom feed (default:
+# https://announcements.ansiblecloud.redhat.com/feed.atom) every 10 min and
+# render entries under "Product Notifications" (e.g. the "upgrade to AAP 2.7"
+# notice). It only fetches when BOTH gateway settings are truthy:
+#   NOTIFICATION_RSS_FEED_ENABLED && NOTIFICATION_RSS_FEED_URL
+#
+# For a debranded community build we (a) default the feed OFF, and (b) blank
+# the hardcoded Red Hat feed URL so the browser never phones home to RH even
+# if a superuser re-enables it (they can still point it at their own URL —
+# the ENABLED pref stays read_only=False).
+echo "=> Silencing product-notification RSS feed (Red Hat announcements)..."
+GW_PREFS="${GW_API_DIR}/registered_preferences.py"
+GW_DEFAULTS="${GW_API_DIR}/defaults.py"
+RH_FEED_URL="https://announcements.ansiblecloud.redhat.com/feed.atom"
+
+# 8.6a — flip NOTIFICATION_RSS_FEED_ENABLED default True -> False (targeted:
+# only the register() block whose preference_name is that pref; a bare
+# s/default=True/default=False/ would clobber unrelated prefs).
+python3 -c "
+f = '${GW_PREFS}'
+c = open(f).read()
+anchor = '''    preference_name=\"NOTIFICATION_RSS_FEED_ENABLED\",
+    required=True,
+    default=True,'''
+repl = '''    preference_name=\"NOTIFICATION_RSS_FEED_ENABLED\",
+    required=True,
+    default=False,'''
+if anchor not in c:
+    raise SystemExit('NOTIFICATION_RSS_FEED_ENABLED default=True anchor not found — upstream may have refactored')
+open(f, 'w').write(c.replace(anchor, repl))
+"
+
+# 8.6b — blank the Red Hat feed URL in defaults.py + the getattr fallback in
+# registered_preferences.py (both hardcode the RH endpoint).
+sedi "s|NOTIFICATION_RSS_FEED_URL = \"${RH_FEED_URL}\"|NOTIFICATION_RSS_FEED_URL = \"\"|" \
+    "${GW_DEFAULTS}"
+sedi "s|getattr(settings, \"NOTIFICATION_RSS_FEED_URL\", \"${RH_FEED_URL}\")|getattr(settings, \"NOTIFICATION_RSS_FEED_URL\", \"\")|" \
+    "${GW_PREFS}"
+
+# 8.6c — assert the RH feed URL is gone from both files
+if grep -qF "${RH_FEED_URL}" "${GW_PREFS}" "${GW_DEFAULTS}"; then
+    echo "   ERROR: Red Hat feed URL still present after silencing:"
+    grep -nF "${RH_FEED_URL}" "${GW_PREFS}" "${GW_DEFAULTS}"
+    exit 1
+fi
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
 # 9. Build the container image
 # -------------------------------------------------------------------
 BUILDX_ARGS=(
