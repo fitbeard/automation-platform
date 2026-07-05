@@ -561,6 +561,58 @@ echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
+# 8.6 Silence "Product Notifications" (Red Hat RSS announcements feed)
+# -------------------------------------------------------------------
+# The platform UI hook platform/notifications/useRssNotifications.tsx has
+# the superuser's browser fetch an Atom feed (default:
+# https://announcements.ansiblecloud.redhat.com/feed.atom) every 10 min and
+# render entries under "Product Notifications" (e.g. the "upgrade to AAP 2.7"
+# notice). It only fetches when BOTH gateway settings are truthy:
+#   NOTIFICATION_RSS_FEED_ENABLED && NOTIFICATION_RSS_FEED_URL
+#
+# For a debranded community build we (a) default the feed OFF, and (b) blank
+# the hardcoded Red Hat feed URL so the browser never phones home to RH even
+# if a superuser re-enables it (they can still point it at their own URL —
+# the ENABLED pref stays read_only=False).
+echo "=> Silencing product-notification RSS feed (Red Hat announcements)..."
+GW_PREFS="${GW_API_DIR}/registered_preferences.py"
+GW_DEFAULTS="${GW_API_DIR}/defaults.py"
+RH_FEED_URL="https://announcements.ansiblecloud.redhat.com/feed.atom"
+
+# 8.6a — flip NOTIFICATION_RSS_FEED_ENABLED default True -> False (targeted:
+# only the register() block whose preference_name is that pref; a bare
+# s/default=True/default=False/ would clobber unrelated prefs).
+python3 -c "
+f = '${GW_PREFS}'
+c = open(f).read()
+anchor = '''    preference_name=\"NOTIFICATION_RSS_FEED_ENABLED\",
+    required=True,
+    default=True,'''
+repl = '''    preference_name=\"NOTIFICATION_RSS_FEED_ENABLED\",
+    required=True,
+    default=False,'''
+if anchor not in c:
+    raise SystemExit('NOTIFICATION_RSS_FEED_ENABLED default=True anchor not found — upstream may have refactored')
+open(f, 'w').write(c.replace(anchor, repl))
+"
+
+# 8.6b — blank the Red Hat feed URL in defaults.py + the getattr fallback in
+# registered_preferences.py (both hardcode the RH endpoint).
+sedi "s|NOTIFICATION_RSS_FEED_URL = \"${RH_FEED_URL}\"|NOTIFICATION_RSS_FEED_URL = \"\"|" \
+    "${GW_DEFAULTS}"
+sedi "s|getattr(settings, \"NOTIFICATION_RSS_FEED_URL\", \"${RH_FEED_URL}\")|getattr(settings, \"NOTIFICATION_RSS_FEED_URL\", \"\")|" \
+    "${GW_PREFS}"
+
+# 8.6c — assert the RH feed URL is gone from both files
+if grep -qF "${RH_FEED_URL}" "${GW_PREFS}" "${GW_DEFAULTS}"; then
+    echo "   ERROR: Red Hat feed URL still present after silencing:"
+    grep -nF "${RH_FEED_URL}" "${GW_PREFS}" "${GW_DEFAULTS}"
+    exit 1
+fi
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
 # 9. Build the container image
 # -------------------------------------------------------------------
 BUILDX_ARGS=(
