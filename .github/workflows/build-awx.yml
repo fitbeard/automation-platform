@@ -16,7 +16,7 @@ jobs:
         uses: docker/setup-qemu-action@v4.1.0
 
       - name: Configure Buildkit
-        uses: docker/setup-buildx-action@v4.1.0
+        uses: docker/setup-buildx-action@v4.2.0
 
       - name: Checkout project
         uses: actions/checkout@v7
