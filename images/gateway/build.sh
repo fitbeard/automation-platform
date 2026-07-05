@@ -491,6 +491,76 @@ echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
+# 8.5 Debrand the Gateway DRF browsable API (Django backend)
+# -------------------------------------------------------------------
+# Everything above (step 8) debrands the React SPA (aap-ui/platform).
+# The Django REST Framework browsable API served at /api/ and its login
+# page at /api/gateway/v1/... render from a SEPARATE template tree in the
+# gateway backend (aap_gateway_api/templates/rest_framework/) that ships
+# Red Hat logo + favicon + copyright. Debrand it here.
+#
+# github.com/fitbeard/ansible-platform#223 reported the logo, favicon, and
+# footer copyright. We additionally fix the help link (help.redhat.com).
+# login.html `{% extends 'rest_framework/api.html' %}` and only overrides
+# breadcrumbs/content, so fixing api.html covers the login page too.
+#
+# Backend console.redhat.com references (registered_preferences.py,
+# defaults.py, status.py) are FUNCTIONAL integration endpoints/field names
+# for the RH Hybrid Cloud Console, NOT browsable-API branding — left alone.
+echo "=> Debranding Gateway DRF browsable API (Django backend)..."
+GW_API_DIR="${BUILD_DIR}/aap_gateway_api"
+GW_STATIC_IMAGES="${GW_API_DIR}/static/images"
+GW_API_TEMPLATE="${GW_API_DIR}/templates/rest_framework/api.html"
+
+if [ ! -f "${GW_API_TEMPLATE}" ]; then
+    echo "   ERROR: ${GW_API_TEMPLATE} not found — gateway source layout changed?"
+    exit 1
+fi
+
+# 8.5a — ship debranded static assets into the gateway static dir, drop RH ones
+cp "${DEBRAND_DIR}/ap-logo-white.svg" "${GW_STATIC_IMAGES}/ap-logo-white.svg"
+cp "${DEBRAND_DIR}/community-icon.svg" "${GW_STATIC_IMAGES}/community-icon.svg"
+rm -f "${GW_STATIC_IMAGES}/Logo-Red_Hat-Ansible_Automation_Platform-A-Standard-RGB.svg" \
+      "${GW_STATIC_IMAGES}/Product_icon-Red_Hat-Ansible_Automation_Platform-RGB.png"
+
+# 8.5b — single-line replacements in api.html (logo src+alt, favicon, help link)
+sedi "s|images/Logo-Red_Hat-Ansible_Automation_Platform-A-Standard-RGB.svg|images/ap-logo-white.svg|" \
+    "${GW_API_TEMPLATE}"
+sedi 's|alt="AAP Platform"|alt="Ansible Platform"|' \
+    "${GW_API_TEMPLATE}"
+sedi "s|images/Product_icon-Red_Hat-Ansible_Automation_Platform-RGB.png|images/community-icon.svg|" \
+    "${GW_API_TEMPLATE}"
+sedi 's|href="https://help.redhat.com/"|href="https://docs.ansible.com/"|' \
+    "${GW_API_TEMPLATE}"
+
+# 8.5c — remove the Red Hat copyright footer block (multi-line; anchor-guarded)
+python3 -c "
+f = '${GW_API_TEMPLATE}'
+content = open(f).read()
+footer = '''<div id=\"footer\">
+  <div class=\"container\">
+    <div class=\"footer-copyright\">
+      Copyright &copy; 2024 <a href=\"http://www.redhat.com\" target=\"_blank\" rel=\"noopener\">Red Hat</a>, Inc. All Rights Reserved.
+    </div>
+  </div>
+</div>
+'''
+if footer not in content:
+    raise SystemExit('DRF footer copyright anchor not found in api.html — upstream may have refactored')
+content = content.replace(footer, '')
+open(f, 'w').write(content)
+"
+
+# 8.5d — fail loudly if any Red Hat branding survives in the template
+if grep -qiE 'Red_Hat|redhat\.com|Red Hat|AAP Platform' "${GW_API_TEMPLATE}"; then
+    echo '   ERROR: residual Red Hat branding still present in api.html after debrand:'
+    grep -niE 'Red_Hat|redhat\.com|Red Hat|AAP Platform' "${GW_API_TEMPLATE}"
+    exit 1
+fi
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
 # 9. Build the container image
 # -------------------------------------------------------------------
 BUILDX_ARGS=(
