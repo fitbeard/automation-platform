@@ -1,14 +1,14 @@
 From 6d079ebebd7bfd23dba29145c65d87613e0a7f0e Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
 Date: Sat, 9 May 2026 11:15:55 +0300
-Subject: [PATCH] patch: rebase Dockerfile.runner on quay.io/fitbeard/ansible-platform/awx-ee
+Subject: [PATCH] patch: rebase Dockerfile.runner on quay.io/fitbeard/automation-platform/awx-ee
 
 Upstream's quay.io/ansible/ansible-runner:latest base is abandoned per
 its quay.io repo description ('no longer maintained'): last build
 2022-04-29, CentOS Stream 8 (EOL May 2024), Python 3.8 (EOL Oct 2024),
 amd64-only.
 
-quay.io/fitbeard/ansible-platform/awx-ee mirrors the actively-maintained quay.io/ansible/awx-ee
+quay.io/fitbeard/automation-platform/awx-ee mirrors the actively-maintained quay.io/ansible/awx-ee
 (rebuilt daily upstream, CentOS Stream 9, Python 3.9, multi-arch). It
 already ships most of what the upstream Dockerfile installs:
 
@@ -44,7 +44,7 @@ index 072375e..79c4ee4 100644
 @@ -1,12 +1,24 @@
 -FROM quay.io/ansible/ansible-runner:latest
 -ENV ANSIBLE_ROLES_PATH ${HOME}/roles
-+FROM quay.io/fitbeard/ansible-platform/awx-ee:latest
++FROM quay.io/fitbeard/automation-platform/awx-ee:latest
  
 -COPY requirements.yml ${HOME}/requirements.yml
 +# awx-ee runs as user `runner` (uid 1000) with HOME=/home/runner. We

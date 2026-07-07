@@ -1,8 +1,8 @@
-# Ansible Platform
+# Automation Platform
 
-Ansible Platform is a community, open-source build of the broader Ansible
-Automation Platform experience. It brings together the controller, Event-Driven
-Ansible, Gateway, execution environments, operators, Helm charts, and supporting
+Automation Platform is an unofficial, open-source build of well know IaC platform.
+It brings together the controller, Event-Driven Ansible, Gateway,
+execution environments, operators, Helm charts, and supporting
 automation needed to run the platform without depending on a single deployment
 model.
 
@@ -14,20 +14,20 @@ Kubernetes operators, Helm charts, MCP support, and Ansible modules for platform
 API configuration.
 
 This repository is expected to live at
-`https://github.com/fitbeard/ansible-platform`. The Ansible Galaxy collection
+`https://github.com/fitbeard/automation-platform`. The Ansible Galaxy collection
 metadata is still published as `fitbeard.awx`.
 
-> This is a community project. It is not affiliated with or supported by Red
-> Hat, and the demo secrets, certificates, and keys are for test environments
+> This is an unofficial project. It is not affiliated with or supported by downstream
+> product company, and the demo secrets, certificates, and keys are for test environments
 > only.
 
 ## Screenshots
 
-![Ansible Platform gateway overview](https://github.com/user-attachments/assets/5ae95042-5f8d-49de-94a5-d41e5264c54f)
+![Automation Platform gateway overview](https://github.com/user-attachments/assets/892690bb-0fc1-44a7-844f-605a8bc4d144)
 
-![Ansible Platform service view](https://github.com/user-attachments/assets/aa642dce-ed53-4f1f-824c-82900a5494cb)
+![Automation Platform service view](https://github.com/user-attachments/assets/e2bfa50f-36b1-4644-8c7d-d56d9b6092e0)
 
-![Ansible Platform controller view](https://github.com/user-attachments/assets/caaad00e-e62f-4e25-af39-7d17c7c732a7)
+![Automation Platform controller view](https://github.com/user-attachments/assets/caaad00e-e62f-4e25-af39-7d17c7c732a7)
 
 ## What is included
 
@@ -45,9 +45,9 @@ metadata is still published as `fitbeard.awx`.
 | --- | --- |
 | `roles/awx` | Installs and upgrades AWX with Docker Compose, nginx, Redis, Postgres, TLS, and Receptor support. |
 | `roles/eda` | Installs and upgrades Event-Driven Ansible with API, workers, UI, Redis, Postgres, and TLS. |
-| `roles/gateway` | Installs and upgrades the Ansible Platform Gateway and configures proxy/service resources. |
+| `roles/gateway` | Installs and upgrades the Automation Platform Gateway and configures proxy/service resources. |
 | `roles/haproxy` | Runs a simple HAProxy test frontend with generated or raw backend pools. |
-| `roles/tls` | Creates or imports the shared Ansible Platform root CA and trust material. |
+| `roles/tls` | Creates or imports the shared Automation Platform root CA and trust material. |
 | `roles/docker` | Installs/configures Docker for the demo hosts. |
 | `roles/awx_settings` | Applies AWX settings through the AWX API. |
 | `demo` | Inventories, host variables, group variables, and runnable playbooks. |
@@ -118,7 +118,7 @@ certificate lifecycle management.
 
 ## Generate a root CA
 
-The `tls` role can create or import the shared Ansible Platform CA. For real
+The `tls` role can create or import the shared Automation Platform CA. For real
 deployments, generate your own root CA and place the values in inventory
 variables such as `ap_ca_crt`, `ap_ca_key`, and `ap_ca_key_passphrase`.
 
@@ -130,7 +130,7 @@ openssl genrsa -aes256 -passout env:AP_CA_PASSPHRASE -out ap_ca_key 4096
 openssl req -x509 -new \
   -key ap_ca_key \
   -passin env:AP_CA_PASSPHRASE \
-  -subj "/CN=Ansible Platform Demo Root CA" \
+  -subj "/CN=Automation Platform Demo Root CA" \
   -sha256 \
   -days 3650 \
   -out ap_ca_crt \
@@ -220,18 +220,18 @@ environment definitions. Most image builds support both `linux/amd64` and
 
 | Image | Default tag | Source path |
 | --- | --- | --- |
-| `quay.io/fitbeard/ansible-platform/awx` | `25.0.0` | `images/awx` |
-| `quay.io/fitbeard/ansible-platform/awx-ee` | `25.0.0` | `images/awx-ee` |
-| `quay.io/fitbeard/ansible-platform/gateway` | `2.6.20260422` | `images/gateway` |
-| `quay.io/fitbeard/ansible-platform/eda-server` | `1.2.8` | `images/eda` |
-| `quay.io/fitbeard/ansible-platform/eda-ui` | `2.6.8` | `images/eda` |
-| `quay.io/fitbeard/ansible-platform/eda-de` | `25.0.0` | `images/eda-de` |
-| `quay.io/fitbeard/ansible-platform/mcp-server` | upstream commit tag | `images/mcp-server` |
-| `quay.io/fitbeard/ansible-platform/awx-operator` | `2.6-709` | `images/awx-operator` |
-| `quay.io/fitbeard/ansible-platform/eda-server-operator` | `2.6-709` | `images/eda-server-operator` |
-| `quay.io/fitbeard/ansible-platform/awx-resource-operator` | `2.6-709` | `images/awx-resource-operator` |
-| `quay.io/fitbeard/ansible-platform/awx-resource-runner` | `2.6-709` | `images/awx-resource-operator` |
-| `quay.io/fitbeard/ansible-platform/ansible-ai-connect-operator` | `2.6-709` | `images/ansible-ai-connect-operator` |
+| `quay.io/fitbeard/automation-platform/awx` | `25.0.0` | `images/awx` |
+| `quay.io/fitbeard/automation-platform/awx-ee` | `25.0.0` | `images/awx-ee` |
+| `quay.io/fitbeard/automation-platform/gateway` | `2.6.20260422` | `images/gateway` |
+| `quay.io/fitbeard/automation-platform/eda-server` | `1.2.8` | `images/eda` |
+| `quay.io/fitbeard/automation-platform/eda-ui` | `2.6.8` | `images/eda` |
+| `quay.io/fitbeard/automation-platform/eda-de` | `25.0.0` | `images/eda-de` |
+| `quay.io/fitbeard/automation-platform/mcp-server` | upstream commit tag | `images/mcp-server` |
+| `quay.io/fitbeard/automation-platform/awx-operator` | `2.6-709` | `images/awx-operator` |
+| `quay.io/fitbeard/automation-platform/eda-server-operator` | `2.6-709` | `images/eda-server-operator` |
+| `quay.io/fitbeard/automation-platform/awx-resource-operator` | `2.6-709` | `images/awx-resource-operator` |
+| `quay.io/fitbeard/automation-platform/awx-resource-runner` | `2.6-709` | `images/awx-resource-operator` |
+| `quay.io/fitbeard/automation-platform/ansible-ai-connect-operator` | `2.6-709` | `images/ansible-ai-connect-operator` |
 
 Example builds:
 
@@ -249,12 +249,12 @@ Execution environment images use `ansible-builder`:
 cd images/awx-ee
 ansible-builder create -v3 --file execution-environment.yml --context . --output-filename=Dockerfile
 docker buildx build --platform linux/amd64,linux/arm64 --push \
-  -t quay.io/fitbeard/ansible-platform/awx-ee:25.0.0 .
+  -t quay.io/fitbeard/automation-platform/awx-ee:25.0.0 .
 ```
 
 `images/ap-gateway-operator` is special: the Gateway operator source is
-extracted from the Red Hat source-bundle OCI image. That path requires access
-to `registry.redhat.io`, and the chart intentionally defaults to
+extracted from the source-bundle OCI image. That path requires access
+to the vendor's registry, and the chart intentionally defaults to
 `quay.io/your-namespace/ap-gateway-operator` until you build and publish your
 own copy.
 

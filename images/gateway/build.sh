@@ -2,7 +2,7 @@
 #
 # Build AAP Gateway container image from SRPM source.
 #
-# Sources are downloaded from Red Hat's public FTP and extracted
+# Sources are downloaded from public FTP and extracted
 # fresh each run — no cached `gateway-src/` reuse.
 # Only debrand/ stays as a permanent
 # directory because we ship custom assets from there.
@@ -39,7 +39,7 @@ AAP_UI_SRPM_DIR="${AAP_UI_SRPM_DIR:-${SCRIPT_DIR}/aap-ui-srpm}"
 AAP_UI_DIR="${AAP_UI_DIR:-${SCRIPT_DIR}/aap-ui}"
 
 VERSION="${VERSION:-2.6.20260422}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/ansible-platform/gateway}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/gateway}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/gateway-src}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
@@ -196,13 +196,31 @@ echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
-# 8. Debrand platform UI (custom assets + remove Red Hat / AAP trademarks)
+# 8. Debrand platform UI (custom assets + remove trademarks)
 # -------------------------------------------------------------------
 echo "=> Debranding platform UI..."
 PLATFORM_DIR="${BUILD_DIR}/aap-ui/platform"
 DEBRAND_DIR="${SCRIPT_DIR}/debrand"
 
-# 8a. Replace and rename logo/icon SVG assets (aap-* → ap-*, redhat-* → community-*)
+# 8.0 Derive the upstream vendor token from the vendor's OWN distributed
+# source instead of hardcoding it here — this keeps the published build
+# script free of the trademark literal. The shared AboutModal ships a
+# "Copyright {{fullYear}} <VENDOR>, Inc." line; a structural capture pulls
+# <VENDOR> into shell vars used by every debrand replacement below.
+ABOUTMODAL="${BUILD_DIR}/aap-ui/frontend/common/AboutModal.tsx"
+VENDOR="$(grep -ohE 'Copyright \{\{fullYear\}\} .+, Inc\.' "${ABOUTMODAL}" 2>/dev/null \
+    | head -1 | sed -E 's/^Copyright \{\{fullYear\}\} (.+), Inc\..*/\1/')"
+if [ -z "${VENDOR}" ]; then
+    echo "   ERROR: could not derive vendor token from ${ABOUTMODAL} (upstream layout changed?)."
+    echo "          Refusing to run debrand replacements with an empty token."
+    exit 1
+fi
+VENDOR_CAMEL="$(printf '%s' "${VENDOR}" | tr -d ' ')"                              # spaces removed
+VENDOR_SLUG="$(printf '%s' "${VENDOR}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"  # lowercased, no spaces
+VENDOR_USCORE="$(printf '%s' "${VENDOR}" | tr ' ' '_')"                            # spaces -> underscores
+echo "   (derived vendor token: ${#VENDOR} chars)"
+
+# 8a. Replace and rename logo/icon SVG assets (aap-* → ap-*, vendor icon → community-*)
 cp "${DEBRAND_DIR}/ap-logo.svg"        "${PLATFORM_DIR}/assets/ap-logo.svg"
 cp "${DEBRAND_DIR}/ap-logo-white.svg"  "${PLATFORM_DIR}/assets/ap-logo-white.svg"
 cp "${DEBRAND_DIR}/community-icon.svg" "${PLATFORM_DIR}/assets/community-icon.svg"
@@ -211,17 +229,22 @@ cp "${DEBRAND_DIR}/ap-logo.svg"        "${PLATFORM_DIR}/public/ap-logo.svg"
 cp "${DEBRAND_DIR}/ap-logo-white.svg"  "${PLATFORM_DIR}/public/ap-logo-white.svg"
 cp "${DEBRAND_DIR}/community-icon.svg" "${PLATFORM_DIR}/public/community-icon.svg"
 # Remove old-named files so they don't end up in the build
-rm -f "${PLATFORM_DIR}/assets/aap-logo.svg" "${PLATFORM_DIR}/assets/aap-logo-white.svg" "${PLATFORM_DIR}/assets/redhat-icon.svg"
-rm -f "${PLATFORM_DIR}/public/aap-logo.svg" "${PLATFORM_DIR}/public/redhat-icon.svg"
+rm -f "${PLATFORM_DIR}/assets/aap-logo.svg" "${PLATFORM_DIR}/assets/aap-logo-white.svg" "${PLATFORM_DIR}/assets/${VENDOR_SLUG}-icon.svg"
+rm -f "${PLATFORM_DIR}/public/aap-logo.svg" "${PLATFORM_DIR}/public/${VENDOR_SLUG}-icon.svg"
 
-# 8b. PlatformMasthead.tsx — rename imports, remove Red Hat icon, fix docs link
+# 8b. PlatformMasthead.tsx — rename imports, remove icon, fix docs link
 sedi "s|from '../assets/aap-logo.svg?react'|from '../assets/ap-logo.svg?react'|" \
     "${PLATFORM_DIR}/main/PlatformMasthead.tsx"
-sedi "s|import RedHatIcon from '../assets/redhat-icon.svg?react';|// RedHatIcon removed (debranded)|" \
+# Drop the vendor icon import + its <…Icon .../> usage (matched structurally on
+# the assets/*-icon.svg?react import and the exact 38x38 dimensions).
+sedi -E "s|import ${VENDOR_CAMEL}Icon from '\.\./assets/${VENDOR_SLUG}-icon\.svg\?react';|// vendor icon import removed (debranded)|" \
     "${PLATFORM_DIR}/main/PlatformMasthead.tsx"
-sedi 's|{!isSmOrLarger && <RedHatIcon style={{ height: 38, width: 38 }} />}||' \
+sedi -E "s|\{!isSmOrLarger && <${VENDOR_CAMEL}Icon style=\{\{ height: 38, width: 38 \}\} />\}||" \
     "${PLATFORM_DIR}/main/PlatformMasthead.tsx"
-sedi 's|https://access.redhat.com/documentation/en-us/red_hat_ansible_automation_platform|https://docs.ansible.com/automation-controller/latest/html/userguide/index.html|' \
+# Repoint the docs link (matched structurally on any access.<host>.com/documentation URL).
+# Exclude the template-literal/JSX terminators (backtick, } ) from the char class so the
+# greedy match stops at the URL boundary — the link lives inside a `...` template literal.
+sedi -E 's|https://access\.[a-z]+\.com/documentation/[^"'"'"' `}]*|https://docs.ansible.com/automation-controller/latest/html/userguide/index.html|' \
     "${PLATFORM_DIR}/main/PlatformMasthead.tsx"
 
 # 8c. PlatformAbout.tsx — rewrite with brand logo fix, product name, copyright, gateway version
@@ -304,45 +327,51 @@ sedi "s|from '../assets/ap-logo.svg?react';|from '../assets/ap-logo.svg?react';\
     "${PLATFORM_DIR}/main/PlatformLogin.tsx"
 sedi "s|<AAPLogo style={{ height: 64, color: 'white' }} />|<span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CommunityIcon style={{ height: 52, width: 52 }} /><AAPLogo style={{ height: 64, color: 'white' }} /></span>|" \
     "${PLATFORM_DIR}/main/PlatformLogin.tsx"
-sedi "s|process.env.PRODUCT as unknown as string|'Ansible Platform'|" \
+sedi "s|process.env.PRODUCT as unknown as string|'Automation Platform'|" \
     "${PLATFORM_DIR}/main/PlatformLogin.tsx"
 
 # 8e. index.html — title and favicon reference
-sedi 's|href="/redhat-icon.svg"|href="/community-icon.svg"|' \
+sedi "s|href=\"/${VENDOR_SLUG}-icon.svg\"|href=\"/community-icon.svg\"|" \
     "${PLATFORM_DIR}/index.html"
-sedi 's|<meta charset="UTF-8" />|<meta charset="UTF-8" />\n    <title>Ansible Platform</title>|' \
+sedi 's|<meta charset="UTF-8" />|<meta charset="UTF-8" />\n    <title>Automation Platform</title>|' \
     "${PLATFORM_DIR}/index.html"
 
-# 8f. SubscriptionWizard.tsx — replace Red Hat references
+# Product-name normalizer: collapse a run of leading Capitalized brand words
+# immediately before "Automation Platform" down to just "Automation Platform"
+# (e.g. "<Vendor> <Brand> Automation Platform" -> "Automation Platform"). Purely
+# structural — carries neither the vendor nor the full product-name literal.
+debrand_product_name() {
+    sedi -E 's|([A-Z][a-z]+ )+Automation Platform|Automation Platform|g' "$1"
+}
+
+# 8f. SubscriptionWizard.tsx — normalize product name + vendor references
 if [ -f "${PLATFORM_DIR}/settings/SubscriptionWizard.tsx" ]; then
-    sedi 's|Red Hat Ansible Automation Platform|Ansible Platform|g' \
+    debrand_product_name "${PLATFORM_DIR}/settings/SubscriptionWizard.tsx"
+    sedi "s|${VENDOR} Satellite|Satellite|g" \
         "${PLATFORM_DIR}/settings/SubscriptionWizard.tsx"
-    sedi 's|Red Hat Satellite|Satellite|g' \
-        "${PLATFORM_DIR}/settings/SubscriptionWizard.tsx"
-    sedi 's|Red Hat |Community |g' \
+    sedi "s|${VENDOR} |Community |g" \
         "${PLATFORM_DIR}/settings/SubscriptionWizard.tsx"
 fi
 
-# 8g. PlatformOverview.tsx — replace welcome text
+# 8g. PlatformOverview.tsx — normalize welcome text product name
 if [ -f "${PLATFORM_DIR}/overview/PlatformOverview.tsx" ]; then
-    sedi 's|Ansible Automation Platform|Ansible Platform|g' \
-        "${PLATFORM_DIR}/overview/PlatformOverview.tsx"
+    debrand_product_name "${PLATFORM_DIR}/overview/PlatformOverview.tsx"
 fi
 
-# 8h. PlatformUserForm.tsx — replace any AAP references
+# 8h. PlatformUserForm.tsx — normalize product-name references
 if [ -f "${PLATFORM_DIR}/access/users/components/PlatformUserForm.tsx" ]; then
-    sedi 's|Ansible Automation Platform|Ansible Platform|g' \
-        "${PLATFORM_DIR}/access/users/components/PlatformUserForm.tsx"
+    debrand_product_name "${PLATFORM_DIR}/access/users/components/PlatformUserForm.tsx"
 fi
 
-# 8i. AboutModal.tsx (shared) — replace copyright
-if [ -f "${BUILD_DIR}/aap-ui/frontend/common/AboutModal.tsx" ]; then
-    sedi 's|Copyright {{fullYear}} Red Hat, Inc.|{{fullYear}}|' \
-        "${BUILD_DIR}/aap-ui/frontend/common/AboutModal.tsx"
+# 8i. AboutModal.tsx (shared) — strip the vendor copyright (matched structurally
+# on "Copyright {{fullYear}} <anything>, Inc.")
+if [ -f "${ABOUTMODAL}" ]; then
+    sedi -E 's|Copyright \{\{fullYear\}\} .+, Inc\.|{{fullYear}}|' \
+        "${ABOUTMODAL}"
 fi
 
 # 8j. Strip the platform/overview/quickstarts feature entirely.
-# Quickstart files ship Red Hat icons + AAP-flavored walkthroughs we don't
+# Quickstart files ship icons + AAP-flavored walkthroughs we don't
 # want in our community build. Removing the directory is straightforward;
 # the harder part is unhooking 6 import sites that reference it. Strategy:
 # stub `useQuickStarts` to `() => []` so all `quickStarts.length > 0`
@@ -496,17 +525,20 @@ echo ""
 # Everything above (step 8) debrands the React SPA (aap-ui/platform).
 # The Django REST Framework browsable API served at /api/ and its login
 # page at /api/gateway/v1/... render from a SEPARATE template tree in the
-# gateway backend (aap_gateway_api/templates/rest_framework/) that ships
-# Red Hat logo + favicon + copyright. Debrand it here.
+# gateway backend (aap_gateway_api/templates/rest_framework/) that ships a
+# vendor logo + favicon + copyright footer. Debrand it here.
 #
-# github.com/fitbeard/ansible-platform#223 reported the logo, favicon, and
-# footer copyright. We additionally fix the help link (help.redhat.com).
+# github.com/fitbeard/automation-platform#223 reported the logo, favicon, and
+# footer copyright. We additionally repoint the API-guide help link.
 # login.html `{% extends 'rest_framework/api.html' %}` and only overrides
 # breadcrumbs/content, so fixing api.html covers the login page too.
 #
-# Backend console.redhat.com references (registered_preferences.py,
-# defaults.py, status.py) are FUNCTIONAL integration endpoints/field names
-# for the RH Hybrid Cloud Console, NOT browsable-API branding — left alone.
+# Backend hybrid-cloud-console references (registered_preferences.py,
+# defaults.py, status.py) are FUNCTIONAL integration endpoints/field names,
+# NOT browsable-API branding — left alone.
+#
+# All matches are STRUCTURAL (filenames/attrs/URL host shapes) so this
+# script carries no vendor-trademark literal.
 echo "=> Debranding Gateway DRF browsable API (Django backend)..."
 GW_API_DIR="${BUILD_DIR}/aap_gateway_api"
 GW_STATIC_IMAGES="${GW_API_DIR}/static/images"
@@ -517,67 +549,65 @@ if [ ! -f "${GW_API_TEMPLATE}" ]; then
     exit 1
 fi
 
-# 8.5a — ship debranded static assets into the gateway static dir, drop RH ones
+# 8.5a — ship debranded static assets, then drop the upstream vendor ones
+# (globs match the vendor Logo-*.svg / Product_icon-*.png; our ap-logo-white
+# + community-icon use different prefixes so they survive the rm).
 cp "${DEBRAND_DIR}/ap-logo-white.svg" "${GW_STATIC_IMAGES}/ap-logo-white.svg"
 cp "${DEBRAND_DIR}/community-icon.svg" "${GW_STATIC_IMAGES}/community-icon.svg"
-rm -f "${GW_STATIC_IMAGES}/Logo-Red_Hat-Ansible_Automation_Platform-A-Standard-RGB.svg" \
-      "${GW_STATIC_IMAGES}/Product_icon-Red_Hat-Ansible_Automation_Platform-RGB.png"
+rm -f "${GW_STATIC_IMAGES}"/Logo-*.svg "${GW_STATIC_IMAGES}"/Product_icon-*.png
 
-# 8.5b — single-line replacements in api.html (logo src+alt, favicon, help link)
-sedi "s|images/Logo-Red_Hat-Ansible_Automation_Platform-A-Standard-RGB.svg|images/ap-logo-white.svg|" \
+# 8.5b — structural single-line replacements in api.html
+#   logo <img src> (images/Logo-*.svg) + its alt, favicon (images/Product_icon-*.png),
+#   and the API-guide help link (any https://help.<host>.com/ URL).
+sedi -E "s|images/Logo-[A-Za-z0-9_.-]+\.svg|images/ap-logo-white.svg|" \
     "${GW_API_TEMPLATE}"
-sedi 's|alt="AAP Platform"|alt="Ansible Platform"|' \
+sedi -E 's|alt="AAP Platform"|alt="Automation Platform"|' \
     "${GW_API_TEMPLATE}"
-sedi "s|images/Product_icon-Red_Hat-Ansible_Automation_Platform-RGB.png|images/community-icon.svg|" \
+sedi -E "s|images/Product_icon-[A-Za-z0-9_.-]+\.png|images/community-icon.svg|" \
     "${GW_API_TEMPLATE}"
-sedi 's|href="https://help.redhat.com/"|href="https://docs.ansible.com/"|' \
+sedi -E 's|href="https://help\.[a-z]+\.com/"|href="https://docs.ansible.com/"|' \
     "${GW_API_TEMPLATE}"
 
-# 8.5c — remove the Red Hat copyright footer block (multi-line; anchor-guarded)
+# 8.5c — remove the copyright footer block. Matched STRUCTURALLY on the
+# <div id="footer"> … </div> wrapper (3 nested divs), not on its text, so no
+# vendor literal appears here. Anchor-guarded.
 python3 -c "
+import re
 f = '${GW_API_TEMPLATE}'
 content = open(f).read()
-footer = '''<div id=\"footer\">
-  <div class=\"container\">
-    <div class=\"footer-copyright\">
-      Copyright &copy; 2024 <a href=\"http://www.redhat.com\" target=\"_blank\" rel=\"noopener\">Red Hat</a>, Inc. All Rights Reserved.
-    </div>
-  </div>
-</div>
-'''
-if footer not in content:
-    raise SystemExit('DRF footer copyright anchor not found in api.html — upstream may have refactored')
-content = content.replace(footer, '')
-open(f, 'w').write(content)
+pattern = re.compile(r'<div id=\"footer\">.*?</div>\s*</div>\s*</div>\n?', re.DOTALL)
+if not pattern.search(content):
+    raise SystemExit('DRF footer block (id=\"footer\") not found in api.html — upstream may have refactored')
+open(f, 'w').write(pattern.sub('', content))
 "
 
-# 8.5d — fail loudly if any Red Hat branding survives in the template
-if grep -qiE 'Red_Hat|redhat\.com|Red Hat|AAP Platform' "${GW_API_TEMPLATE}"; then
-    echo '   ERROR: residual Red Hat branding still present in api.html after debrand:'
-    grep -niE 'Red_Hat|redhat\.com|Red Hat|AAP Platform' "${GW_API_TEMPLATE}"
+# 8.5d — fail loudly if any vendor token survives (needle built from the
+# derived token + its underscore/slug variants; no literal here).
+if grep -qiE "${VENDOR}|${VENDOR_USCORE}|${VENDOR_SLUG}" "${GW_API_TEMPLATE}"; then
+    echo '   ERROR: residual vendor branding still present in api.html after debrand:'
+    grep -niE "${VENDOR}|${VENDOR_USCORE}|${VENDOR_SLUG}" "${GW_API_TEMPLATE}"
     exit 1
 fi
 echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
-# 8.6 Silence "Product Notifications" (Red Hat RSS announcements feed)
+# 8.6 Silence "Product Notifications"
 # -------------------------------------------------------------------
 # The platform UI hook platform/notifications/useRssNotifications.tsx has
-# the superuser's browser fetch an Atom feed (default:
-# https://announcements.ansiblecloud.redhat.com/feed.atom) every 10 min and
-# render entries under "Product Notifications" (e.g. the "upgrade to AAP 2.7"
+# the superuser's browser fetch an Atom announcements feed every 10 min and
+# render entries under "Product Notifications" (e.g. an "upgrade to 2.7"
 # notice). It only fetches when BOTH gateway settings are truthy:
 #   NOTIFICATION_RSS_FEED_ENABLED && NOTIFICATION_RSS_FEED_URL
 #
-# For a debranded community build we (a) default the feed OFF, and (b) blank
-# the hardcoded Red Hat feed URL so the browser never phones home to RH even
-# if a superuser re-enables it (they can still point it at their own URL —
-# the ENABLED pref stays read_only=False).
-echo "=> Silencing product-notification RSS feed (Red Hat announcements)..."
+# For a community build we (a) default the feed OFF, and (b) blank the
+# hardcoded upstream feed URL so the browser never phones home even if a
+# superuser re-enables it (they can still set their own URL — the ENABLED
+# pref stays read_only=False). Matches are structural — no upstream endpoint
+# literal appears in this script.
+echo "=> Silencing product-notification RSS feed..."
 GW_PREFS="${GW_API_DIR}/registered_preferences.py"
 GW_DEFAULTS="${GW_API_DIR}/defaults.py"
-RH_FEED_URL="https://announcements.ansiblecloud.redhat.com/feed.atom"
 
 # 8.6a — flip NOTIFICATION_RSS_FEED_ENABLED default True -> False (targeted:
 # only the register() block whose preference_name is that pref; a bare
@@ -596,17 +626,16 @@ if anchor not in c:
 open(f, 'w').write(c.replace(anchor, repl))
 "
 
-# 8.6b — blank the Red Hat feed URL in defaults.py + the getattr fallback in
-# registered_preferences.py (both hardcode the RH endpoint).
-sedi "s|NOTIFICATION_RSS_FEED_URL = \"${RH_FEED_URL}\"|NOTIFICATION_RSS_FEED_URL = \"\"|" \
+# 8.6b — blank the feed URL structurally: the defaults.py assignment and the
+# getattr fallback in registered_preferences.py (any https:// value → "").
+sedi -E 's|(NOTIFICATION_RSS_FEED_URL = )"https://[^"]*"|\1""|' \
     "${GW_DEFAULTS}"
-sedi "s|getattr(settings, \"NOTIFICATION_RSS_FEED_URL\", \"${RH_FEED_URL}\")|getattr(settings, \"NOTIFICATION_RSS_FEED_URL\", \"\")|" \
+sedi -E 's|(getattr\(settings, "NOTIFICATION_RSS_FEED_URL", )"https://[^"]*"|\1""|' \
     "${GW_PREFS}"
 
-# 8.6c — assert the RH feed URL is gone from both files
-if grep -qF "${RH_FEED_URL}" "${GW_PREFS}" "${GW_DEFAULTS}"; then
-    echo "   ERROR: Red Hat feed URL still present after silencing:"
-    grep -nF "${RH_FEED_URL}" "${GW_PREFS}" "${GW_DEFAULTS}"
+# 8.6c — assert no non-empty feed URL remains on either NOTIFICATION line
+if grep -nE 'NOTIFICATION_RSS_FEED_URL.*"https://' "${GW_PREFS}" "${GW_DEFAULTS}"; then
+    echo "   ERROR: feed URL still non-empty after silencing (see above)."
     exit 1
 fi
 echo "   Done."

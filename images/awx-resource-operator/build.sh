@@ -3,7 +3,7 @@
 # Build awx-resource-operator + awx-resource-runner container images from
 # public upstream code.
 #
-# Reproduces what Red Hat ships in AAP 2.6-709 (platform-operator-bundle
+# Reproduces what ships in AAP 2.6-709 (platform-operator-bundle
 # commit 73746606bcf6), using only transparent, publicly-verifiable
 # operations:
 #
@@ -17,18 +17,18 @@
 # github.com/ansible/awx-resource-operator.
 #
 # Produces TWO **upstream-pure** images:
-#   - Operator: quay.io/fitbeard/ansible-platform/awx-resource-operator:2.6-709
+#   - Operator: quay.io/fitbeard/automation-platform/awx-resource-operator:2.6-709
 #       Manages CRDs in tower.ansible.com/v1alpha1:
 #         AnsibleJob, JobTemplate, AnsibleProject, AnsibleWorkflow,
 #         AnsibleCredential, AnsibleSchedule, AnsibleInstanceGroup,
 #         WorkflowTemplate, AnsibleInventory
-#   - Runner:   quay.io/fitbeard/ansible-platform/awx-resource-runner:2.6-709
+#   - Runner:   quay.io/fitbeard/automation-platform/awx-resource-runner:2.6-709
 #       Spawned per-CR by the operator as a batch/v1 Job to talk to AWX
 #       via the awx.awx ansible collection.
 #
-# Red Hat's "downstreamify.sh" overlay (awx.awx -> ansible.controller
+# "downstreamify.sh" overlay (awx.awx -> ansible.controller
 # collection swap) is NOT applied.
-# tl;dr: ansible.controller is a private Red Hat
+# tl;dr: ansible.controller is a private
 # certified collection, not on public Galaxy — applying downstreamify
 # would produce an image that fails to install collections without an
 # AAP entitlement.
@@ -48,8 +48,8 @@
 #   ./build.sh --operator-only          # Skip runner image, build only operator
 #
 # Env overrides:
-#   IMAGE_NAME=...        # default: quay.io/fitbeard/ansible-platform/awx-resource-operator
-#   RUNNER_IMAGE_NAME=... # default: quay.io/fitbeard/ansible-platform/awx-resource-runner
+#   IMAGE_NAME=...        # default: quay.io/fitbeard/automation-platform/awx-resource-operator
+#   RUNNER_IMAGE_NAME=... # default: quay.io/fitbeard/automation-platform/awx-resource-runner
 #   IMAGE_TAG=...         # default: 2.6-709
 #   BASELINE_COMMIT=...   # default: 3de78b38...
 
@@ -98,8 +98,8 @@ for arg in "$@"; do
 done
 
 VERSION="${VERSION:-2.6-709}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/ansible-platform/awx-resource-operator}"
-RUNNER_IMAGE_NAME="${RUNNER_IMAGE_NAME:-quay.io/fitbeard/ansible-platform/awx-resource-runner}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx-resource-operator}"
+RUNNER_IMAGE_NAME="${RUNNER_IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx-resource-runner}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="ap-operators-multiarch"

@@ -33,7 +33,7 @@
       block:
         - name: Generate a certificate signing request
           community.crypto.openssl_csr_pipe:
-            common_name: Ansible Platform
+            common_name: Automation Platform
             country_name: "{{ ap_ca_country_name | default(omit) }}"
             locality_name: "{{ ap_ca_locality_name | default(omit) }}"
             organization_name: "{{ ap_ca_organization_name | default(omit) }}"

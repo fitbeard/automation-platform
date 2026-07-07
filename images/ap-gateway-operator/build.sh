@@ -3,7 +3,7 @@
 # Build the AAP Gateway Operator container image — bundle-extraction edition.
 #
 # Unlike build-operator-{awx,eda}/, the gateway-operator has NO public
-# upstream Git repo. Source ships only inside Red Hat's source-bundle
+# upstream Git repo. Source ships only inside source-bundle
 # OCI image:
 #
 #   registry.redhat.io/ansible-automation-platform/platform-operator-bundle:2.6-709-source
@@ -13,16 +13,16 @@
 #
 # AUTHENTICATION
 # --------------
-# registry.redhat.io requires a Red Hat customer portal account or a
-# registry service-account token. One-time setup:
+# The source bundle lives in the vendor's registry, which requires an
+# account or a registry service-account token. One-time setup — log in to
+# the registry host shown in the BUNDLE_IMAGE path above:
 #
-#   docker login registry.redhat.io
-#   Username: <portal username, or registry service account name>
-#   Password: <portal password, or service-account token>
+#   docker login <registry host>
+#   Username: <account username, or registry service-account name>
+#   Password: <account password, or service-account token>
 #
-# Service-account tokens (recommended for non-interactive use) are created
-# at https://access.redhat.com/terms-based-registry/ — see
-# https://access.redhat.com/RegistryAuthentication for full docs.
+# Service-account tokens are recommended for non-interactive use; consult
+# the vendor's registry-authentication documentation for the details.
 #
 # Once `docker login` has stored credentials this script picks them up
 # automatically.
@@ -41,6 +41,7 @@ set -euo pipefail
 # --- Configuration -----------------------------------------------------------
 
 BUNDLE_IMAGE="${BUNDLE_IMAGE:-registry.redhat.io/ansible-automation-platform/platform-operator-bundle:2.6-709-source}"
+REGISTRY_HOST="${BUNDLE_IMAGE%%/*}"   # login target, derived from the image path
 SUBPROJECT="${SUBPROJECT:-gateway-operator}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -82,17 +83,16 @@ done
 
 if ! docker image inspect "$BUNDLE_IMAGE" >/dev/null 2>&1; then
     echo "==> Pulling $BUNDLE_IMAGE"
-    echo "    Authentication required: docker login registry.redhat.io"
-    echo "    https://access.redhat.com/RegistryAuthentication"
+    echo "    Authentication required: docker login ${REGISTRY_HOST}"
     if ! docker pull "$BUNDLE_IMAGE"; then
         cat >&2 <<EOF
 
 ERROR: docker pull failed.
 
 If you see "unauthorized" or "authentication required":
-  1. docker login registry.redhat.io
-  2. Use Red Hat portal credentials, or a registry service-account token
-     (https://access.redhat.com/terms-based-registry/)
+  1. docker login ${REGISTRY_HOST}
+  2. Use your vendor account credentials, or a registry
+     service-account token
   3. Re-run this script.
 
 EOF
@@ -187,7 +187,7 @@ echo "==> src/ ready ($(find "$SRC_DIR" -type f | wc -l | tr -d ' ') files)"
 fi  # end if [[ $SKIP_EXTRACT -eq 0 ]]
 
 # --- Phase 4: inverse-downstreamify (sed-based bulk renames) ----------------
-# unpatch.sh undoes select Red Hat downstreamify transformations so the
+# unpatch.sh undoes select downstreamify transformations so the
 # gateway-operator can drive vanilla upstream sub-operators (AWX, EDA, ...).
 if [[ -x "${SCRIPT_DIR}/unpatch.sh" ]]; then
     "${SCRIPT_DIR}/unpatch.sh"

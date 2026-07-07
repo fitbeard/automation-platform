@@ -38,8 +38,8 @@ awx_image: awx
 awx_ee_image_tag: "{{ awx_image_tag }}"
 awx_ee_image: awx-ee
 awx_image_registry: quay.io
-awx_image_url: "{{ awx_image_registry }}/fitbeard/ansible-platform/{{ awx_image }}:{{ awx_image_tag }}"
-awx_ee_image_url: "{{ awx_image_registry }}/fitbeard/ansible-platform/{{ awx_ee_image }}:{{ awx_ee_image_tag }}"
+awx_image_url: "{{ awx_image_registry }}/fitbeard/automation-platform/{{ awx_image }}:{{ awx_image_tag }}"
+awx_ee_image_url: "{{ awx_image_registry }}/fitbeard/automation-platform/{{ awx_ee_image }}:{{ awx_ee_image_tag }}"
 
 awx_directory: /opt/awx
 
@@ -143,7 +143,7 @@ gateway_hostname: "{{ undef(hint='You must specify a AP frontend address with pr
 gateway_image_tag: 2.6.20260422
 gateway_image: gateway
 gateway_image_registry: quay.io
-gateway_image_url: "{{ gateway_image_registry }}/fitbeard/ansible-platform/{{ gateway_image }}:{{ gateway_image_tag }}"
+gateway_image_url: "{{ gateway_image_registry }}/fitbeard/automation-platform/{{ gateway_image }}:{{ gateway_image_tag }}"
 gateway_envoy_version: v1.34.14
 
 gateway_directory: /opt/gateway
@@ -277,8 +277,8 @@ eda_server_image: eda-server
 eda_ui_image_tag: 2.6.8
 eda_ui_image: eda-ui
 eda_image_registry: quay.io
-eda_server_image_url: "{{ eda_image_registry }}/fitbeard/ansible-platform/{{ eda_server_image }}:{{ eda_server_image_tag }}"
-eda_ui_image_url: "{{ eda_image_registry }}/fitbeard/ansible-platform/{{ eda_ui_image }}:{{ eda_ui_image_tag }}"
+eda_server_image_url: "{{ eda_image_registry }}/fitbeard/automation-platform/{{ eda_server_image }}:{{ eda_server_image_tag }}"
+eda_ui_image_url: "{{ eda_image_registry }}/fitbeard/automation-platform/{{ eda_ui_image }}:{{ eda_ui_image_tag }}"
 
 eda_directory: /opt/eda
 

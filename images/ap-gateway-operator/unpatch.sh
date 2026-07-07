@@ -2,7 +2,7 @@
 #
 # Inverse-downstreamify for gateway-operator src/.
 #
-# Red Hat applies a `downstreamify.sh` to most upstream operators before
+# Downstream applies a `downstreamify.sh` to most upstream operators before
 # bundling. For awx/eda/galaxy/ai-connect we work directly against the
 # upstream public repos and never touch downstreamify (so we naturally
 # get upstream kind/group names like AWX, EDA, AutomationHub, etc.).
@@ -11,10 +11,10 @@
 # also assumes its sub-component CRs were ALSO downstreamified (e.g., it
 # expects to create `AutomationController` / `automationcontroller.ansible.com`
 # CRs, the renamed-by-RH form of upstream `AWX` / `awx.ansible.com`).
-# Since our awx-operator stays upstream, we have to UNDO Red Hat's
+# Since our awx-operator stays upstream, we have to UNDO
 # downstreamify on the gateway-operator side.
 #
-# This script mirrors the shape of Red Hat's downstreamify.sh — sed-based
+# This script mirrors the shape of downstreamify.sh — sed-based
 # global identifier substitutions across the role/template tree. We use
 # sed here (instead of patches/*.patch + patch.sh) because:
 #
@@ -68,27 +68,28 @@ rm -f ./Dockerfile.bak
 # Upstream src/config/manager/manager.yaml hardcodes:
 #   imagePullPolicy: Always   -> won't use locally-loaded kind images
 #   imagePullSecrets:
-#     - name: redhat-operators-pull-secret   -> not present on plain k8s
+#     - name: <vendor>-operators-pull-secret   -> not present on plain k8s
 # Flip both so `kind load docker-image` works and there's no missing secret.
+# The pull-secret line is matched structurally (any *-operators-pull-secret).
 
-echo "==> manager.yaml: imagePullPolicy Always -> IfNotPresent, drop redhat-operators-pull-secret, ANSIBLE_VERBOSITY 2 -> 0, RELATED_IMAGE_GATEWAY/_PROXY -> public"
+echo "==> manager.yaml: imagePullPolicy Always -> IfNotPresent, drop operators pull-secret, ANSIBLE_VERBOSITY 2 -> 0, RELATED_IMAGE_GATEWAY/_PROXY -> public"
 sed -i.bak \
     -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/' \
-    -e '/^      imagePullSecrets:$/,/^        - name: redhat-operators-pull-secret$/d' \
+    -e '/^      imagePullSecrets:$/,/^        - name: [a-z-]*operators-pull-secret$/d' \
     -e "/name: ANSIBLE_VERBOSITY/{n;s/value: '2'/value: '0'/;}" \
-    -e "/name: RELATED_IMAGE_GATEWAY$/{n;s|value: .*|value: quay.io/fitbeard/ansible-platform/gateway:2.6.20260422|;}" \
+    -e "/name: RELATED_IMAGE_GATEWAY$/{n;s|value: .*|value: quay.io/fitbeard/automation-platform/gateway:2.6.20260422|;}" \
     -e "/name: RELATED_IMAGE_GATEWAY_PROXY$/{n;s|value: .*|value: docker.io/envoyproxy/envoy:v1.34-latest|;}" \
     ./config/manager/manager.yaml
 rm -f ./config/manager/manager.yaml.bak
 
-# --- 3. Surface rename: AAP -> AP (Ansible Platform) ------------------------
+# --- 3. Surface rename: AAP -> AP (Automation Platform) ------------------------
 # The operator's deeply-internal logic (CRD group `aap.ansible.com`, kind
 # `AnsibleAutomationPlatform`, role dir `ansibleautomationplatform`, var
 # names `combined_aap`, etc.) keeps the AAP branding because renaming
 # them is invasive and high-risk. But on the SURFACE — image name,
 # kustomize namePrefix, generated resource names — we drop the extra "A"
 # and use AP. The user-visible naming becomes consistent with our other
-# rebuild artifacts (where we never inherited Red Hat's AAP marketing).
+# rebuild artifacts.
 
 echo "==> Surface AAP -> AP rename"
 echo "    namePrefix in kustomize: aap-gateway-operator- -> ap-gateway-operator-"
@@ -144,7 +145,7 @@ find ./roles ./config/rbac -type f \( -name '*.yml' -o -name '*.yaml' -o -name '
 find ./roles ./config/rbac -type f -name '*.bak' -delete
 
 # --- 6. MCP kind/group inverse-rename ---------------------------------------
-# Same idea as section 5 but for MCP. Red Hat's downstreamify renames the
+# Same idea as section 5 but for MCP. Downstreamify renames the
 # upstream `AnsibleMCPConnect` / `mcpconnect.ansible.com` to downstream
 # `AnsibleMCPServer` / `mcpserver.ansible.com`, and gateway-operator's
 # bundle source carries those downstream-renamed references in its role

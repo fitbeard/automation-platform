@@ -19,7 +19,7 @@ the top of set_images.yml. resources_configuration.yml still runs
 them again later — harmless idempotent set_fact — so we don't need
 to touch that file.
 
-Symptom this fixes: setting control_plane_ee_image: quay.io/fitbeard/ansible-platform/awx-ee
+Symptom this fixes: setting control_plane_ee_image: quay.io/fitbeard/automation-platform/awx-ee
 on the AWX CR leaves init-receptor pointing at quay.io/ansible/awx-ee
 and crashing in disconnected environments.
 ---

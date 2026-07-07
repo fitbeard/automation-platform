@@ -8,7 +8,7 @@ Content-Transfer-Encoding: 8bit
 
 AWX's web/task/dispatcher fleet saturates Postgres' upstream default of
 100 connections quickly. Expose 'postgres_max_connections' (default
-1024 — Red Hat-validated ceiling) on the CR and inject it as the
+1024 — validated ceiling) on the CR and inject it as the
 POSTGRESQL_MAX_CONNECTIONS env var, which the sclorg postgres-15-c9s
 image (default _postgres_image) honors at startup.
 ---
@@ -26,7 +26,7 @@ index df78359..a9b966d 100644
  #
 +# Maximum number of concurrent connections accepted by the postgres pod.
 +# Upstream postgres defaults to 100, which AWX's web/task/dispatcher fleet
-+# saturates quickly. 1024 matches Red Hat's AAP-validated ceiling.
++# saturates quickly. 1024 matches validated ceiling.
 +postgres_max_connections: 1024
 +#
  # Define postgresql.conf configurations

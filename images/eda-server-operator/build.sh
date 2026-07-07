@@ -2,13 +2,13 @@
 #
 # Build EDA Server Operator container image from public upstream code.
 #
-# Reproduces what Red Hat ships in AAP 2.6-709 (platform-operator-bundle
+# Reproduces what ships in AAP 2.6-709 (platform-operator-bundle
 # commit b72dbf054980), using only transparent, publicly-verifiable
 # operations:
 #
 #   1. git clone https://github.com/ansible/eda-server-operator
 #   2. git checkout b72dbf05498050209cf1ba799af3f0bd2d896d61   (baseline)
-#   3. git cherry-pick 2 public upstream SHAs that Red Hat carried on top
+#   3. git cherry-pick 2 public upstream SHAs that carried on top
 #      (see CHERRY_PICKS below)
 #   4. patch.sh applies our local patches (postgres tuning)
 #   5. docker build
@@ -19,9 +19,9 @@
 # Produces an upstream-pure operator:
 #   - Kind:    EDA / EDABackup / EDARestore
 #   - Group:   eda.ansible.com
-#   - Image:   quay.io/fitbeard/ansible-platform/eda-server-operator:2.6-709
+#   - Image:   quay.io/fitbeard/automation-platform/eda-server-operator:2.6-709
 #
-# Red Hat's downstreamify.sh overlay (RELATED_IMAGE_EDA* injection,
+# downstreamify.sh overlay (RELATED_IMAGE_EDA* injection,
 # Route ingress default, /var/lib/ansible-automation-platform/eda
 # path swaps, FQDN k8s rewrites) is NOT applied.
 #
@@ -33,7 +33,7 @@
 #   ./build.sh --no-cache               # Force docker rebuild from scratch
 #
 # Env overrides:
-#   IMAGE_NAME=...       # default: quay.io/fitbeard/ansible-platform/eda-server-operator
+#   IMAGE_NAME=...       # default: quay.io/fitbeard/automation-platform/eda-server-operator
 #   IMAGE_TAG=...        # default: 2.6-709
 #   BASELINE_COMMIT=...  # default: b72dbf05...
 
@@ -47,7 +47,7 @@ SRC_DIR="${SCRIPT_DIR}/src"
 UPSTREAM_URL="https://github.com/ansible/eda-server-operator"
 BASELINE_COMMIT="${BASELINE_COMMIT:-b72dbf05498050209cf1ba799af3f0bd2d896d61}"
 
-# Upstream SHAs Red Hat cherry-picks on top of the baseline in AAP 2.6-709
+# Upstream SHAs cherry-picks on top of the baseline in AAP 2.6-709
 # (was 2 picks for 708, +5 new for 709). Applied in chronological order.
 # Identified by replaying baseline + downstreamify on a fresh checkout and
 # diffing against the bundle source.
@@ -57,8 +57,8 @@ BASELINE_COMMIT="${BASELINE_COMMIT:-b72dbf05498050209cf1ba799af3f0bd2d896d61}"
 #   4c9fd0c — cleanup old redis artifacts (#321) — REVERTED by f939b71 (round-trip)
 #   f939b71 — Revert "cleanup old redis artifacts"
 #   6d43ede — Revert "Remove redis from operator (#328)"
-#   6a5cbe0 — event streams DB user feature (#326) — Red Hat hasn't picked
-#   1812547 — event persistence feature (#332) — Red Hat hasn't picked
+#   6a5cbe0 — event streams DB user feature (#326) — hasn't picked
+#   1812547 — event persistence feature (#332) — hasn't picked
 #   cd7ef68 — Merge fix_awx_restore (#322)
 #   eac9f69 — Merge AAP-67753
 CHERRY_PICKS=(
@@ -93,7 +93,7 @@ done
 VERSION="${VERSION:-2.6-709}"
 DEFAULT_EDA_VERSION="${DEFAULT_EDA_VERSION:-1.2.8}"
 DEFAULT_EDA_UI_VERSION="${DEFAULT_EDA_UI_VERSION:-2.6.8}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/ansible-platform/eda-server-operator}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-server-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="aap-operators-multiarch"

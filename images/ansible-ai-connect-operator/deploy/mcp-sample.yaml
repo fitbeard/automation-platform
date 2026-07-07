@@ -54,7 +54,7 @@ spec:
 
   # Optional: bring-your-own MCP runtime image (otherwise operator uses
   # RELATED_IMAGE_ANSIBLE_MCP_SERVER env from helm chart values)
-  # image: quay.io/fitbeard/ansible-platform/mcp-server
+  # image: quay.io/fitbeard/automation-platform/mcp-server
   # image_version: latest
 
   # Optional: trust a custom CA for talking to AAP (self-signed certs etc.)
