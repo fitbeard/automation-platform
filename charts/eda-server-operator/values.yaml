@@ -5,7 +5,7 @@ replicaCount: 1
 
 # -- Operator container image
 image:
-  repository: quay.io/fitbeard/ansible-platform/eda-server-operator
+  repository: quay.io/fitbeard/automation-platform/eda-server-operator
   tag: 2.6-709
   pullPolicy: IfNotPresent
 
@@ -34,8 +34,8 @@ leaderElection:
 #    chain so users can deploy an EDA CR without restating image fields.
 #    Empty string skips the env var (falls back to upstream-baked default).
 relatedImages:
-  eda: quay.io/fitbeard/ansible-platform/eda-server:1.2.8
-  edaUi: quay.io/fitbeard/ansible-platform/eda-ui:2.6.8
+  eda: quay.io/fitbeard/automation-platform/eda-server:1.2.8
+  edaUi: quay.io/fitbeard/automation-platform/eda-ui:2.6.8
   edaInitContainer: ""        # default: ubi9/ubi-minimal
   edaRedis: ""                # default: docker.io/redis:latest
   edaPostgres: ""             # default: quay.io/sclorg/postgresql-15-c9s

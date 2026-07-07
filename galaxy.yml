@@ -4,7 +4,7 @@ version: 1.0.0 # injected dynamically when publishing
 readme: README.md
 authors:
   - Tadas Sutkaitis <tadasas@gmail.com>
-description: Community Ansible Platform
+description: Community Automation Platform
 license:
   - GPL-3.0-or-later
 dependencies:
@@ -13,9 +13,9 @@ dependencies:
   community.crypto: ">=2.2.3"
   community.docker: ">=4.3.1"
   community.general: ">=10.3.1"
-repository: https://github.com/fitbeard/ansible-platform
-homepage: https://github.com/fitbeard/ansible-platform
-issues: https://github.com/fitbeard/ansible-platform/issues
+repository: https://github.com/fitbeard/automation-platform
+homepage: https://github.com/fitbeard/automation-platform
+issues: https://github.com/fitbeard/automation-platform/issues
 build_ignore:
   - .ansible
   - .github

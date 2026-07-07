@@ -36,9 +36,9 @@ DAB_COMMIT="5f6343b9b98c5e48e7a4dc087bf931cd2bd5f104"
 # Image configuration
 VERSION="${VERSION:-1.2.8}"
 UI_VERSION="${UI_VERSION:-2.6.8}"
-EDA_IMAGE_NAME="${EDA_IMAGE_NAME:-quay.io/fitbeard/ansible-platform/eda-server}"
+EDA_IMAGE_NAME="${EDA_IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-server}"
 EDA_IMAGE_TAG="${EDA_IMAGE_TAG:-$VERSION}"
-UI_IMAGE_NAME="${UI_IMAGE_NAME:-quay.io/fitbeard/ansible-platform/eda-ui}"
+UI_IMAGE_NAME="${UI_IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-ui}"
 UI_IMAGE_TAG="${UI_IMAGE_TAG:-$UI_VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="eda-multiarch"
@@ -209,13 +209,14 @@ UI_BUILD_DIR="${BUILD_DIR}/ap-ui"
 sedi "s|EDA_API_PREFIX: '/api/eda/v1',|EDA_API_PREFIX: '/api/eda/v1',\n  PRODUCT: 'EDA',\n  VERSION: '${VERSION}',|" \
     "${UI_BUILD_DIR}/frontend/eda/vite.config.ts"
 
-# 6b. AboutModal.tsx: replace Red Hat copyright with neutral year-only
-sedi 's|Copyright {{fullYear}} Red Hat, Inc.|{{fullYear}}|' \
+# 6b. AboutModal.tsx: strip vendor copyright, neutral year-only.
+#     Structural match on "Copyright {{fullYear}} <anything>, Inc." — no literal.
+sedi -E 's|Copyright \{\{fullYear\}\} .+, Inc\.|{{fullYear}}|' \
     "${UI_BUILD_DIR}/frontend/common/AboutModal.tsx"
 
-# 6c. Replace Red Hat documentation links with upstream EDA docs
-#     Pattern matches any access.redhat.com/documentation URL regardless of version/path
-sedi 's|https://access.redhat.com/documentation[^">]*|https://ansible.readthedocs.io/projects/rulebook/en/latest/|g' \
+# 6c. Replace documentation links with upstream EDA docs.
+#     Structural match on any access.<host>.com/documentation URL (any version/path).
+sedi -E 's|https://access\.[a-z]+\.com/documentation[^">]*|https://ansible.readthedocs.io/projects/rulebook/en/latest/|g' \
     "${UI_BUILD_DIR}/frontend/eda/main/EdaMasthead.tsx" \
     "${UI_BUILD_DIR}/frontend/eda/overview/EdaOverview.tsx"
 
@@ -243,34 +244,25 @@ content = re.sub(
 open(f, 'w').write(content)
 "
 
-# 6e. EdaOverview.tsx welcome card: simplify "To learn how to get started, "
-#     sentence — drop the redhat.com/engage link to "instruct guides" promo
-#     page, keep one Documentation link (URL already swapped in 6c above).
-#     Original: "To learn how to get started, [Documentation.][check out our instruct guides], or follow the steps below."
-#     New:      "To learn how to get started read [documentation], or follow the steps below."
+# 6e. EdaOverview.tsx welcome card: simplify the "To learn how to get started"
+#     sentence — drop the promo "instruct guides" ExternalLink, keep one
+#     documentation link (URL already swapped in 6c above). All matches are
+#     structural / keyed on non-brand inner text — no vendor URL literal here.
 python3 -c "
+import re
 f = '${UI_BUILD_DIR}/frontend/eda/overview/EdaOverview.tsx'
 content = open(f).read()
-old = '''                  {t('To learn how to get started, ')}
-                  <ExternalLink href=\"https://ansible.readthedocs.io/projects/rulebook/en/latest/\">
-                    {t\`Documentation.\`}
-                  </ExternalLink>
-                  <ExternalLink href=\"https://www.redhat.com/en/engage/event-driven-ansible-20220907\">
-                    {t('check out our instruct guides')}
-                  </ExternalLink>
-                  <>
-                    {t(', or follow the steps below.')} <ExternalLinkAltIcon />
-                  </>'''
-new = '''                  {t('To learn how to get started read ')}
-                  <ExternalLink href=\"https://ansible.readthedocs.io/projects/rulebook/en/latest/\">
-                    {t\`documentation\`}
-                  </ExternalLink>
-                  <>
-                    {t(', or follow the steps below.')} <ExternalLinkAltIcon />
-                  </>'''
-if old not in content:
-    raise SystemExit('EdaOverview.tsx welcome-card anchor not found — upstream may have refactored')
-open(f, 'w').write(content.replace(old, new))
+# (1) intro wording
+content = content.replace('To learn how to get started, ', 'To learn how to get started read ')
+# (2) first doc link label
+content = content.replace('{t\`Documentation.\`}', '{t\`documentation\`}')
+# (3) remove the promo ExternalLink, keyed on its non-brand inner text +
+#     any https URL (structural — no vendor URL literal appears here)
+promo = re.compile(r'\s*<ExternalLink href=\"https://[^\"]*\">\s*\{t\([^)]*check out our instruct guides[^)]*\)\}\s*</ExternalLink>', re.DOTALL)
+if not promo.search(content):
+    raise SystemExit('EdaOverview.tsx instruct-guides promo link not found — upstream may have refactored')
+content = promo.sub('', content)
+open(f, 'w').write(content)
 "
 
 echo "   Done."

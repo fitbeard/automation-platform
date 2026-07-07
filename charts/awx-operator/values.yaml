@@ -5,7 +5,7 @@ replicaCount: 1
 
 # -- Operator container image
 image:
-  repository: quay.io/fitbeard/ansible-platform/awx-operator
+  repository: quay.io/fitbeard/automation-platform/awx-operator
   tag: 2.6-709
   pullPolicy: IfNotPresent
 
@@ -34,8 +34,8 @@ leaderElection:
 #    chain so users can deploy a CR without restating image fields each time.
 #    Empty string skips the env var (falls back to upstream default).
 relatedImages:
-  awx: quay.io/fitbeard/ansible-platform/awx:25.0.0
-  controlPlaneEE: quay.io/fitbeard/ansible-platform/awx-ee:25.0.0
+  awx: quay.io/fitbeard/automation-platform/awx:25.0.0
+  controlPlaneEE: quay.io/fitbeard/automation-platform/awx-ee:25.0.0
   awxInitContainer: ""        # auto-derives from controlPlaneEE via patch 0002
   awxInitProjectsContainer: ""
   awxRedis: ""

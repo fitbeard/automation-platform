@@ -2,13 +2,13 @@
 #
 # Build AWX Operator container image from public upstream code.
 #
-# Reproduces what Red Hat ships in AAP 2.6-709 (platform-operator-bundle
+# Reproduces what ships in AAP 2.6-709 (platform-operator-bundle
 # commit 6a4432fc9b69), using only transparent, publicly-verifiable
 # operations:
 #
 #   1. git clone https://github.com/ansible/awx-operator
 #   2. git checkout 7ead166ca030c2bebdd1c3254d152c9a2be7ee4d   (baseline)
-#   3. git cherry-pick public upstream SHAs that Red Hat carried on top
+#   3. git cherry-pick public upstream SHAs that carried on top
 #      (see CHERRY_PICKS below)
 #   4. docker build
 #
@@ -24,7 +24,7 @@
 #   ./build.sh --no-cache               # Force docker rebuild from scratch
 #
 # Env overrides:
-#   IMAGE_NAME=...       # default: quay.io/fitbeard/ansible-platform/awx-operator
+#   IMAGE_NAME=...       # default: quay.io/fitbeard/automation-platform/awx-operator
 #   IMAGE_TAG=...        # default: 2.6-709
 #   BASELINE_COMMIT=...  # default: 7ead166c...
 
@@ -38,7 +38,7 @@ SRC_DIR="${SCRIPT_DIR}/src"
 UPSTREAM_URL="https://github.com/ansible/awx-operator"
 BASELINE_COMMIT="${BASELINE_COMMIT:-7ead166ca030c2bebdd1c3254d152c9a2be7ee4d}"
 
-# Eight upstream SHAs Red Hat cherry-picks on top of the baseline in
+# Eight upstream SHAs cherry-picks on top of the baseline in
 # AAP 2.6-709. Applied in chronological order. The two trailing picks
 # (5697fee + 60fc7d8) are new in 2.6-709 vs 2.6-708.
 #
@@ -82,7 +82,7 @@ done
 
 VERSION="${VERSION:-2.6-709}"
 DEFAULT_AWX_VERSION="${DEFAULT_AWX_VERSION:-25.0.0}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/ansible-platform/awx-operator}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="ap-operators-multiarch"

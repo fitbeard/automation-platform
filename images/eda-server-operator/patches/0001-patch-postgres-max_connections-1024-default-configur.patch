@@ -8,7 +8,7 @@ Content-Transfer-Encoding: 8bit
 
 EDA's gunicorn / daphne / activation-worker fleet saturates Postgres'
 upstream default of 100 connections quickly. Expose
-postgres_max_connections (default 1024 — Red Hat-validated ceiling)
+postgres_max_connections (default 1024 — validated ceiling)
 inside the _database dict so users can override via
 spec.database.postgres_max_connections on the EDA CR. Inject it as
 POSTGRESQL_MAX_CONNECTIONS env var, honored by the sclorg
@@ -29,7 +29,7 @@ index 4598039..6ae459f 100644
    postgres_extra_args: ''  # Deprecated
 +  # Maximum number of concurrent connections accepted by the postgres pod.
 +  # Upstream postgres defaults to 100, which EDA's gunicorn / daphne /
-+  # activation-worker fleet saturates quickly. 1024 matches Red Hat's
++  # activation-worker fleet saturates quickly. 1024 matches
 +  # AAP-validated ceiling. Override via spec.database.postgres_max_connections
 +  # on the EDA CR.
 +  postgres_max_connections: 1024

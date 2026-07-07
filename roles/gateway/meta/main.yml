@@ -2,7 +2,7 @@
 galaxy_info:
   role_name: gateway
   author: Tadas Sutkaitis <tadasas@gmail.com>
-  description: Install and configures Ansible Platform Gateway
+  description: Install and configures Automation Platform Gateway
   license: BSD
   min_ansible_version: 5.5.0
   platforms:

@@ -18,7 +18,7 @@ Minimal fix: only add the .{{ namespace }}.svc.cluster.local FQDN
 suffix. Keep the original service-name choice ({{ name }}) — the
 upstream role has both '{{ name }}' (bare, this line) and
 '{{ name }}-api' (9 other lines) variants for gateway_hostname; we
-don't know which Red Hat intended where. Preserve the original line's
+don't know which intended where. Preserve the original line's
 choice and only fix what's actually broken (cross-namespace DNS).
 
 Symptom without fix: PLAY RECAP shows failed=1 with

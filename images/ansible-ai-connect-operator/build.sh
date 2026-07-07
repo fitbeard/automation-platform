@@ -2,7 +2,7 @@
 #
 # Build mcp-operator container image from public upstream code.
 #
-# Reproduces what Red Hat ships in AAP 2.6-709 for the MCP server kind, but
+# Reproduces what ships in AAP 2.6-709 for the MCP server kind, but
 # scoped to MCP-only: the upstream `ansible/ansible-ai-connect-operator`
 # binary manages BOTH AnsibleAIConnect (chatbot/Lightspeed/Wisdom — RH/IBM
 # enterprise stack we skip) AND AnsibleMCPConnect (MCP server, standalone).
@@ -49,7 +49,7 @@
 #   ./build.sh --no-cache               # Force docker rebuild from scratch
 #
 # Env overrides:
-#   IMAGE_NAME=...       # default: quay.io/fitbeard/ansible-platform/ansible-ai-connect-operator
+#   IMAGE_NAME=...       # default: quay.io/fitbeard/automation-platform/ansible-ai-connect-operator
 #   IMAGE_TAG=...        # default: 2.6-709
 #   BASELINE_COMMIT=...  # default: 1e1d9cc... (last commit before v1.40 upgrade)
 
@@ -85,7 +85,7 @@ for arg in "$@"; do
 done
 
 VERSION="${VERSION:-2.6-709}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/ansible-platform/ansible-ai-connect-operator}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/ansible-ai-connect-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="ap-operators-multiarch"

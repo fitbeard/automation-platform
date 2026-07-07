@@ -37,7 +37,7 @@ leaderElection:
 #    chain so users can deploy an AAP CR without restating image fields.
 #    Empty string skips the env var (falls back to upstream-baked default).
 relatedImages:
-  gateway: quay.io/fitbeard/ansible-platform/gateway:2.6.20260422
+  gateway: quay.io/fitbeard/automation-platform/gateway:2.6.20260422
   gatewayProxy: docker.io/envoyproxy/envoy:v1.34-latest
   gatewayPostgres: quay.io/sclorg/postgresql-15-c9s:latest
   gatewayRedis: quay.io/sclorg/redis-6-c9s:c9s

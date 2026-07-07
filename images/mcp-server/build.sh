@@ -2,7 +2,7 @@
 #
 # Build aap-mcp-server container image from public upstream code.
 #
-# Reproduces what Red Hat ships in
+# Reproduces what ships in
 #   registry.redhat.io/ansible-automation-platform-tech-preview/mcp-server-rhel9
 # but with these substitutions for an open/free build:
 #   - Base image:    docker.io/rockylinux/rockylinux:9-minimal (auth-free)
@@ -21,7 +21,7 @@
 #   ./build.sh --no-cache               # force fresh docker build
 #
 # Env overrides:
-#   IMAGE_NAME=...        # default: quay.io/fitbeard/ansible-platform/mcp-server
+#   IMAGE_NAME=...        # default: quay.io/fitbeard/automation-platform/mcp-server
 #   MCP_SERVER_SHA=...    # default: a9281de4... (latest stable on main)
 #   DUMB_INIT_TAG=...     # default: v1.2.5
 #   IMAGE_TAG=...         # default: <short-sha>
@@ -35,7 +35,7 @@ DUMB_INIT_DIR="${SCRIPT_DIR}/deps/dumb-init"
 # --- Upstream pins ----------------------------------------------------------
 #
 # We ship a9281de4 (2026-05-09 "Merge PR #149") — public main HEAD at the time
-# of our last build. Red Hat's downstream tech-preview tag 2.6.20260325 is
+# of our last build. Downstream tech-preview tag 2.6.20260325 is
 # pinned to public commit 1c762dd (2026-03-09 "fix: CVE-2026-30827:
 # express-rate-limit"); identified by file-content SHA-1 fingerprinting of
 # the source-image bundle (see DOWNSTREAM-PIN.md for methodology).
@@ -72,7 +72,7 @@ for arg in "$@"; do
     esac
 done
 
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/ansible-platform/mcp-server}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/mcp-server}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="mcp-server-multiarch"
 

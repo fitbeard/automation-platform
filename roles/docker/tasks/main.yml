@@ -4,8 +4,8 @@
     name: python3-requests
     state: present
 
-- name: Include RedHat tasks
-  ansible.builtin.include_tasks: setup-RedHat.yml
+- name: Include EL tasks
+  ansible.builtin.include_tasks: setup-EL.yml
   when: ansible_os_family == 'RedHat'
 
 - name: Include Debian tasks

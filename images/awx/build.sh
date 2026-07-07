@@ -9,7 +9,7 @@
 #   rewrite, indirect node counting, ~50 dep bumps) — too large to cherry-
 #   pick by hand. SRPM tarball is the only transparent route.
 #
-#   SRPM is public on ftp.redhat.com, Apache-2.0, %prep has ZERO %patchN or
+#   SRPM is public on the vendor FTP, Apache-2.0, %prep has ZERO %patchN or
 #   git apply directives — the tarball IS the complete source.
 #
 #   UI source (aap-ui) lives in a fundamentally private repo
@@ -60,7 +60,7 @@ DAB_COMMIT="5f6343b9b98c5e48e7a4dc087bf931cd2bd5f104"
 
 # Using 25.0.0 as a clean version reset for the SRPM-based rebuild.
 VERSION="${VERSION:-25.0.0}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/ansible-platform/awx}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/awx-src}"
@@ -175,7 +175,7 @@ echo ""
 
 # -------------------------------------------------------------------
 # 3. Fetch official AWX branding assets (public ansible/awx-logos).
-#    The SRPM ships `controller-assets-*.tar.gz` with Red Hat brand-logos;
+#    The SRPM ships `controller-assets-*.tar.gz` with brand-logos;
 #    we skip that and use the community awx-logos instead.
 # -------------------------------------------------------------------
 echo "=> Fetching AWX logos from ${AWX_LOGOS_REPO} @ ${AWX_LOGOS_COMMIT:0:12}..."
@@ -196,7 +196,7 @@ cd "${BUILD_DIR}"
 #      certifi @ git+https://github.com/ansible/system-certifi.git@devel
 #      django-ansible-base @ git+ssh://git@github.com/ansible-automation-platform/django-ansible-base@stable-2.6
 #
-#    Replace with public HTTPS + pinned commits (same commits Red Hat ships
+#    Replace with public HTTPS + pinned commits (same commits ships
 #    as source tarballs in the SRPM).
 # -------------------------------------------------------------------
 echo "=> Rewriting requirements_git.txt to public HTTPS pins..."
@@ -364,13 +364,14 @@ echo ""
 # 8d. Debrand About modal trademark.
 #     Source: aap-ui/frontend/common/AboutModal.tsx — shared by AWX/EDA/etc.
 #     Year is already dynamic via `new Date().getFullYear()`. The hardcoded
-#     "Copyright …  Red Hat, Inc." trademark stays inappropriate for our
+#     "Copyright ..." trademark stays inappropriate for our
 #     public AWX rebuild — drop the entire wrapper, keep just `{year}`.
 #     Stale translation entries in locales/<lang>/translation.json fall
 #     through to the new English source string (i18next default behavior).
 # -------------------------------------------------------------------
 echo "=> Debranding About modal trademark in aap-ui..."
-sedi 's|Copyright {{fullYear}} Red Hat, Inc\.|{{fullYear}}|g' "${AAP_UI_DIR}/frontend/common/AboutModal.tsx"
+# Structural match on "Copyright {{fullYear}} <anything>, Inc." — no vendor literal.
+sedi -E 's|Copyright \{\{fullYear\}\} .+, Inc\.|{{fullYear}}|g' "${AAP_UI_DIR}/frontend/common/AboutModal.tsx"
 echo "   Done."
 echo ""
 

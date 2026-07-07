@@ -3,6 +3,7 @@
 
 # (c) 2023, Sean Sullivan <@sean-m-sullivan>
 # (c) 2018, Nikhil Jain <nikjain@redhat.com>
+# (c) 2026, Tadas Sutkaitis <tadasas@gmail.com>
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
@@ -84,20 +85,6 @@ EXAMPLES = """
     settings:
       DEFAULT_PAGE_SIZE: <default_page_size>
       MAX_PAGE_SIZE: <max_page_size>
-
-- name: Enable analytics and tracking
-  fitbeard.awx.settings:
-    settings:
-      INSIGHTS_TRACKING_STATE: true/false
-
-- name: Configure Red Hat integration
-  fitbeard.awx.settings:
-    settings:
-      RED_HAT_CONSOLE_URL: "<red_hat_console_url>"
-      REDHAT_USERNAME: "<redhat_username>"
-      REDHAT_PASSWORD: "<encrypted_redhat_password>"
-      SUBSCRIPTIONS_USERNAME: "<subscriptions_username>"
-      SUBSCRIPTIONS_PASSWORD: "<encrypted_subscriptions_password>"
 
 - name: Set Automation Analytics gather interval
   fitbeard.awx.settings:

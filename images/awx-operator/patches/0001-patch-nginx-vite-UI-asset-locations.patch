@@ -6,7 +6,7 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The AWX Vite UI (shipped in quay.io/fitbeard/ansible-platform/awx:25.0.0+) emits absolute
+The AWX Vite UI (shipped in quay.io/fitbeard/automation-platform/awx:25.0.0+) emits absolute
 URL references in index_awx.html that the upstream operator nginx
 config does not expose:
 

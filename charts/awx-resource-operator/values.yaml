@@ -5,7 +5,7 @@ replicaCount: 1
 
 # -- Operator container image
 image:
-  repository: quay.io/fitbeard/ansible-platform/awx-resource-operator
+  repository: quay.io/fitbeard/automation-platform/awx-resource-operator
   tag: 2.6-709
   pullPolicy: IfNotPresent
 
@@ -34,13 +34,13 @@ leaderElection:
 #    container. Per-CR `runner_image`/`runner_version` fields override this
 #    default when set.
 relatedImages:
-  jobRunner: quay.io/fitbeard/ansible-platform/awx-resource-runner:2.6-709
+  jobRunner: quay.io/fitbeard/automation-platform/awx-resource-runner:2.6-709
 
 # -- Max concurrent reconciles (passed as a CLI arg on the operator).
 maxConcurrentReconciles: 15
 
 # -- Optional kube-rbac-proxy sidecar exposing /metrics behind authn/authz.
-#    Matches Red Hat downstream behavior — config/default/kustomization.yaml
+#    Matches downstream behavior — config/default/kustomization.yaml
 #    applies manager_auth_proxy_patch.yaml in 2.6-709 to wire this sidecar,
 #    same as awx-operator + eda-server-operator + gateway-operator.
 #    Disable on small / dev clusters to skip the extra container.
