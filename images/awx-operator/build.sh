@@ -2,8 +2,8 @@
 #
 # Build AWX Operator container image from public upstream code.
 #
-# Reproduces what ships in AAP 2.6-709 (platform-operator-bundle
-# commit 6a4432fc9b69), using only transparent, publicly-verifiable
+# Reproduces what ships in platform-operator-bundle:2.6-1787258025-source,
+# using only transparent, publicly-verifiable
 # operations:
 #
 #   1. git clone https://github.com/ansible/awx-operator
@@ -38,11 +38,11 @@ SRC_DIR="${SCRIPT_DIR}/src"
 UPSTREAM_URL="https://github.com/ansible/awx-operator"
 BASELINE_COMMIT="${BASELINE_COMMIT:-7ead166ca030c2bebdd1c3254d152c9a2be7ee4d}"
 
-# Eight upstream SHAs cherry-picks on top of the baseline in
-# AAP 2.6-709. Applied in chronological order. The two trailing picks
-# (5697fee + 60fc7d8) are new in 2.6-709 vs 2.6-708.
+# Upstream SHAs cherry-picked on top of the baseline. Applied in chronological
+# order. Picks 1-8 reproduce AAP 2.6-709; picks 9-15 advance to the
+# 2.6-1787258025 bundle.
 #
-# Skipped between picks (deliberate, preserved for both 708 and 709):
+# Skipped between picks (deliberate):
 #   bfc4d8e — Add CRD validation for postgres_image+image_version pairing (#2096)
 #   fcf9a08 — Remove OperatorHub automation/documentation
 #   f9c05a5 — ci: Update DOCKER_API_VERSION to 1.44 (#2102)
@@ -50,6 +50,10 @@ BASELINE_COMMIT="${BASELINE_COMMIT:-7ead166ca030c2bebdd1c3254d152c9a2be7ee4d}"
 #   5fb6bb7 — Upgrade operator-sdk to v1.40.0 and remove kube-rbac-proxy  *** load-bearing skip ***
 #   a47b06f — devel: Update development guide
 #   605b46d — Collect logs with greater determination (#2087)
+#   9c3f521 — Standardize dev workflow with Makefile includes + docs (#2111)  (dev-only)
+#   6ea736f — ci: bump Python from 3.8 to 3.11 (#2124)  (CI-only)
+#   f125405 — bump operator-sdk to v1.42.2 (#2121)  *** load-bearing skip — base image locked at v1.36.1 ***
+#   2d39b54 — sync Makefile + operator-sdk v1.42.3 (#2125)  *** load-bearing skip (same reason) ***
 CHERRY_PICKS=(
     "eeed2b8ae5dd1956d2bf127c7c986fa53792553c"  # 2026-01-19 django: --no-imports (Django 5.2 compat)
     "f04ab1878cbbccd7bf0a959d50f29e89ce13b64b"  # 2026-01-23 web: python3.11 -> python3.12 mountPath
@@ -59,6 +63,13 @@ CHERRY_PICKS=(
     "56f10cf9666a37ec385192176214a4f48e44127e"  # 2026-03-05 Fix custom backup_pvc name (#2105)
     "5697feea5705c45909b67acbd8539955963a4bd5"  # 2026-03-23 Fix unquoted timestamps in event templates (#2110)  [709]
     "60fc7d856c553fd16e91a06fdc5cee66798b2aa3"  # 2026-03-24 Add use_db_compression option (#2106)              [709]
+    "7745848ba59fe91b6cf0eb6724ebe216f485c5af"  # 2026-04-29 feat: proxy env var support for AWX containers (#2113)  [1787258025]
+    "b333026226d98cc8637d94e69842c2f3a30ae80f"  # 2026-05-06 refactor: proxy env vars -> ConfigMap-only, drop CRD fields (#2114)  [1787258025]
+    "cdc592167f5a3551d47c68201c65abeb3d863d35"  # 2026-05-26 web: fix supervisord liveness config filename (#2116)  [1787258025]
+    "afad0c1a105b6795bc39808e63c505050b8af2b1"  # 2026-06-02 fix: Ansible defaults for CRD-only vars (#2119)  [1787258025]
+    "dc1c80f2043816c4d4a4c3cecf79268a2afdb7d2"  # 2026-06-10 deprecate postgres_keep_pvc_after_upgrade in CRD (#2117)  [1787258025]
+    "09fc035621d97218de625e54b4a0e306959b5ab9"  # 2026-06-23 allow skipping PostgreSQL backup/restore (#2120)  [1787258025]
+    "1a5774df9c4ccc6a0d1c38f2df00ae87c08e6368"  # 2026-07-23 fix: augment NO_PROXY in proxy-env ConfigMap (#2128)  [1787258025]
 )
 
 # --- Flags -------------------------------------------------------------------
@@ -80,8 +91,8 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-709}"
-DEFAULT_AWX_VERSION="${DEFAULT_AWX_VERSION:-25.0.0}"
+VERSION="${VERSION:-2.6-1787258025}"
+DEFAULT_AWX_VERSION="${DEFAULT_AWX_VERSION:-26.0.0}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
