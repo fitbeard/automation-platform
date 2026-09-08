@@ -6,7 +6,7 @@ replicaCount: 1
 # -- Operator container image
 image:
   repository: quay.io/fitbeard/automation-platform/ansible-ai-connect-operator
-  tag: 2.6-709
+  tag: 2.6-1787258025
   pullPolicy: IfNotPresent
 
 # -- Pull secrets for private registries
@@ -37,7 +37,7 @@ leaderElection:
 relatedImages:
   # Pinned to a specific git-sha-tagged build. Bump when build-mcp-server
   # rebuilds against a newer ansible/aap-mcp-server upstream commit.
-  mcpServer: quay.io/fitbeard/automation-platform/mcp-server:a9281de4
+  mcpServer: quay.io/fitbeard/automation-platform/mcp-server:03876616
 
 # -- Optional kube-rbac-proxy sidecar exposing /metrics behind authn/authz.
 #    Matches downstream behavior — config/default/kustomization.yaml

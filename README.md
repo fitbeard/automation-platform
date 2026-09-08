@@ -231,7 +231,7 @@ environment definitions. Most image builds support both `linux/amd64` and
 | `quay.io/fitbeard/automation-platform/eda-server-operator` | `2.6-1787258025` | `images/eda-server-operator` |
 | `quay.io/fitbeard/automation-platform/awx-resource-operator` | `2.6-709` | `images/awx-resource-operator` |
 | `quay.io/fitbeard/automation-platform/awx-resource-runner` | `2.6-709` | `images/awx-resource-operator` |
-| `quay.io/fitbeard/automation-platform/ansible-ai-connect-operator` | `2.6-709` | `images/ansible-ai-connect-operator` |
+| `quay.io/fitbeard/automation-platform/ansible-ai-connect-operator` | `2.6-1787258025` | `images/ansible-ai-connect-operator` |
 
 Example builds:
 
