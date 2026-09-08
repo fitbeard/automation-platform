@@ -6,11 +6,11 @@ on:
       tag:
         description: 'Set image tag'
         required: true
-        default: '1.2.8'
+        default: '1.2.12'
       ui-tag:
         description: 'Set UI image tag'
         required: true
-        default: '2.6.8'
+        default: '2.6.13'
 
 jobs:
   images:

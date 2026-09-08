@@ -6,15 +6,15 @@ on:
       tag:
         description: 'Set image tag'
         required: true
-        default: '2.6-709'
+        default: '2.6-1787258025'
       eda-tag:
         description: 'Set EDA image tag'
         required: true
-        default: '1.2.8'
+        default: '1.2.12'
       eda-ui-tag:
         description: 'Set EDA UI image tag'
         required: true
-        default: '2.6.8'
+        default: '2.6.13'
 
 jobs:
   image:

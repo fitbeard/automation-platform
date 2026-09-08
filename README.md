@@ -223,12 +223,12 @@ environment definitions. Most image builds support both `linux/amd64` and
 | `quay.io/fitbeard/automation-platform/awx` | `26.0.0` | `images/awx` |
 | `quay.io/fitbeard/automation-platform/awx-ee` | `26.0.0` | `images/awx-ee` |
 | `quay.io/fitbeard/automation-platform/gateway` | `2.6.20260422` | `images/gateway` |
-| `quay.io/fitbeard/automation-platform/eda-server` | `1.2.8` | `images/eda` |
-| `quay.io/fitbeard/automation-platform/eda-ui` | `2.6.8` | `images/eda` |
-| `quay.io/fitbeard/automation-platform/eda-de` | `25.0.0` | `images/eda-de` |
+| `quay.io/fitbeard/automation-platform/eda-server` | `1.2.12` | `images/eda` |
+| `quay.io/fitbeard/automation-platform/eda-ui` | `2.6.13` | `images/eda` |
+| `quay.io/fitbeard/automation-platform/eda-de` | `26.0.0` | `images/eda-de` |
 | `quay.io/fitbeard/automation-platform/mcp-server` | upstream commit tag | `images/mcp-server` |
 | `quay.io/fitbeard/automation-platform/awx-operator` | `2.6-1787258025` | `images/awx-operator` |
-| `quay.io/fitbeard/automation-platform/eda-server-operator` | `2.6-709` | `images/eda-server-operator` |
+| `quay.io/fitbeard/automation-platform/eda-server-operator` | `2.6-1787258025` | `images/eda-server-operator` |
 | `quay.io/fitbeard/automation-platform/awx-resource-operator` | `2.6-709` | `images/awx-resource-operator` |
 | `quay.io/fitbeard/automation-platform/awx-resource-runner` | `2.6-709` | `images/awx-resource-operator` |
 | `quay.io/fitbeard/automation-platform/ansible-ai-connect-operator` | `2.6-709` | `images/ansible-ai-connect-operator` |
