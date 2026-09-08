@@ -10,7 +10,7 @@ description: |
   operator install.
 type: application
 version: 0.1.0
-appVersion: "2.6-709"
+appVersion: "2.6-1787258025"
 keywords:
   - eda
   - event-driven-ansible

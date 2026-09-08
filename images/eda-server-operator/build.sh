@@ -2,13 +2,13 @@
 #
 # Build EDA Server Operator container image from public upstream code.
 #
-# Reproduces what ships in AAP 2.6-709 (platform-operator-bundle
-# commit b72dbf054980), using only transparent, publicly-verifiable
+# Reproduces what ships in platform-operator-bundle:2.6-1787258025-source,
+# using only transparent, publicly-verifiable
 # operations:
 #
 #   1. git clone https://github.com/ansible/eda-server-operator
 #   2. git checkout b72dbf05498050209cf1ba799af3f0bd2d896d61   (baseline)
-#   3. git cherry-pick 2 public upstream SHAs that carried on top
+#   3. git cherry-pick the public upstream SHAs that carried on top
 #      (see CHERRY_PICKS below)
 #   4. patch.sh applies our local patches (postgres tuning)
 #   5. docker build
@@ -19,7 +19,7 @@
 # Produces an upstream-pure operator:
 #   - Kind:    EDA / EDABackup / EDARestore
 #   - Group:   eda.ansible.com
-#   - Image:   quay.io/fitbeard/automation-platform/eda-server-operator:2.6-709
+#   - Image:   quay.io/fitbeard/automation-platform/eda-server-operator:2.6-1787258025
 #
 # downstreamify.sh overlay (RELATED_IMAGE_EDA* injection,
 # Route ingress default, /var/lib/ansible-automation-platform/eda
@@ -34,7 +34,7 @@
 #
 # Env overrides:
 #   IMAGE_NAME=...       # default: quay.io/fitbeard/automation-platform/eda-server-operator
-#   IMAGE_TAG=...        # default: 2.6-709
+#   IMAGE_TAG=...        # default: 2.6-1787258025
 #   BASELINE_COMMIT=...  # default: b72dbf05...
 
 set -euo pipefail
@@ -47,20 +47,26 @@ SRC_DIR="${SCRIPT_DIR}/src"
 UPSTREAM_URL="https://github.com/ansible/eda-server-operator"
 BASELINE_COMMIT="${BASELINE_COMMIT:-b72dbf05498050209cf1ba799af3f0bd2d896d61}"
 
-# Upstream SHAs cherry-picks on top of the baseline in AAP 2.6-709
-# (was 2 picks for 708, +5 new for 709). Applied in chronological order.
-# Identified by replaying baseline + downstreamify on a fresh checkout and
-# diffing against the bundle source.
+# Upstream SHAs cherry-picked on top of the baseline. Applied in chronological
+# order. Picks 1-7 reproduce AAP 2.6-709; picks 8-15 advance to the
+# 2.6-1787258025 bundle. Identified by replaying
+# baseline + picks and diffing (FQCN + EDA-kind + image-pin normalized) against
+# the bundle source.
 #
-# Skipped between picks (deliberate, preserved across both 708 and 709):
+# Skipped (deliberate). Base image stays ansible-operator v1.36.1 (confirmed in
+# BOTH bundles) — downstream never took the operator-sdk upgrades, same as us:
 #   b7e4168 — Merge operator-sdk-v1.40.0-upgrade (#323)  *** load-bearing skip ***
-#   4c9fd0c — cleanup old redis artifacts (#321) — REVERTED by f939b71 (round-trip)
-#   f939b71 — Revert "cleanup old redis artifacts"
-#   6d43ede — Revert "Remove redis from operator (#328)"
-#   6a5cbe0 — event streams DB user feature (#326) — hasn't picked
-#   1812547 — event persistence feature (#332) — hasn't picked
-#   cd7ef68 — Merge fix_awx_restore (#322)
-#   eac9f69 — Merge AAP-67753
+#   bb19376 — bump operator-sdk to v1.42.2 (#356)         *** load-bearing skip ***
+#   80e750a — sync Makefile + operator-sdk v1.42.3 (#358) *** load-bearing skip ***
+#   4c9fd0c/f939b71/6d43ede — redis cleanup + reverts (round-trip)
+#   6a5cbe0/1812547 — event-streams / event-persistence (not in bundle)
+#   597ddad/03051830 — Makefile standardization (dev-only)
+#   21c95bc/3cbbf9b/3415718/7bc9494/9a630ef — CI-only
+#   f8aab23 — revert proxy molecule test (test-only)
+#   746a39d — remove manager_auth_proxy_patch ref — bundle KEEPS it (kube-rbac-proxy present, base v1.36.1)
+#   460e160 — affinity parameter (#307) — NOT in bundle
+#   91c0a6f — finalizer playbook (#361) — NOT in bundle
+#   (all merge commits skipped; underlying non-merge commits picked directly)
 CHERRY_PICKS=(
     "4cd8202304a1904010f625892cc8d943e88dee86"  # 2026-02-03 create_backup_pvc option (#316)               [708]
     "6bf7694465ae8ea72fead93219c62387c50115f5"  # 2026-03-04 backup_pvc custom name in templates (#324)     [708]
@@ -69,6 +75,14 @@ CHERRY_PICKS=(
     "8fd2fa2cfb7185d1dbe2a1a1f22a08f326cca072"  # 2026-04-01 Add --no-imports to django commands           [709]
     "ccccc992f8417eb137784ff87796c42b535b6a75"  # 2026-04-09 Fix dup Jinja2 close tag (activation-worker)  [709]
     "5183504188245f833d817b0eb8140ee1439bdb9c"  # 2026-04-09 Fix dup Jinja2 close tags (other 2 templates) [709]
+    "c13fae8d5468632d0e8b6e9e1d68aea6c7c161ad"  # 2026-04-24 feat: proxy env var support for EDA containers (#341)  [1787258025]
+    "afef412f876780b4858992ca5be3d541e53a1eb4"  # 2026-04-27 fix(eda-api): mount bundle_cacert in gunicorn container [1787258025]
+    "dd35b5c7fd078f4f6933e01e304f67745c541521"  # 2026-05-06 refactor: proxy env vars -> ConfigMap-only, drop CRD fields (#346) [1787258025]
+    "cfdc6b251b24e5cedb2e94813e687e7ff907ec9e"  # 2026-06-10 deprecate postgres_keep_pvc_after_upgrade (#352) [1787258025]
+    "1dcdb3fbf1efec5a74d08e423fcb9888d5d47f7d"  # 2026-06-10 Set WORKER_KIND to websocket on daphne          [1787258025]
+    "5680468d903a0150a1990bdc4cab68358526ec20"  # 2026-06-15 allow skipping PostgreSQL backup/restore        [1787258025]
+    "1570553001e21d7e1e3ee3d27d27af171962e53f"  # 2026-07-23 fix: augment NO_PROXY in proxy-env ConfigMap (#359) [1787258025]
+    "0416746d1c74010e02b9de4906913ba5b2ca795e"  # 2026-07-24 fix: remove chmod/chown from backup postgres task (#360) [1787258025]
 )
 
 # --- Flags -------------------------------------------------------------------
@@ -90,9 +104,9 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-709}"
-DEFAULT_EDA_VERSION="${DEFAULT_EDA_VERSION:-1.2.8}"
-DEFAULT_EDA_UI_VERSION="${DEFAULT_EDA_UI_VERSION:-2.6.8}"
+VERSION="${VERSION:-2.6-1787258025}"
+DEFAULT_EDA_VERSION="${DEFAULT_EDA_VERSION:-1.2.12}"
+DEFAULT_EDA_UI_VERSION="${DEFAULT_EDA_UI_VERSION:-2.6.13}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-server-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
@@ -126,7 +140,57 @@ for sha in "${CHERRY_PICKS[@]}"; do
     short="$(git rev-parse --short=8 "$sha")"
     subject="$(git log --format='%s' -n 1 "$sha")"
     echo "    $short  $subject"
-    git cherry-pick --allow-empty --keep-redundant-commits --quiet "$sha"
+    if ! git cherry-pick --allow-empty --keep-redundant-commits --quiet "$sha"; then
+        # Upstream `main` is non-linear (merge commits, a redis remove/re-add
+        # round-trip, postgres_keep_pvc deprecation) so replaying a downstream-
+        # selected subset by SHA hits a few structural conflicts. Each is
+        # resolved to match the extracted bundle source exactly. Anything not
+        # handled below aborts loudly (real drift, not silently resolved).
+        unmerged="$(git diff --name-only --diff-filter=U)"
+        non_docs="$(printf '%s\n' "$unmerged" | grep -v '^docs/' || true)"
+
+        # docs/upgrade/*.md — NOT shipped in the image; take upstream.
+        docs_only="$(printf '%s\n' "$unmerged" | grep '^docs/' || true)"
+        if [ -n "$docs_only" ]; then
+            # shellcheck disable=SC2086
+            git checkout --theirs -- $docs_only && git add -- $docs_only
+        fi
+
+        case "$short" in
+        1dcdb3fb)
+            # WORKER_KIND: upstream removed the redis EDA_MQ_* env block; we (and
+            # the bundle) KEEP it. 3-way merge conflicts on the insertion point.
+            # Union: keep our redis block (--ours) + append EDA_WORKER_KIND after
+            # the redis HA-cluster-hosts entry, matching the bundle's ordering.
+            f="roles/eda/templates/eda-api.deployment.yaml.j2"
+            git checkout --ours -- "$f"
+            # The template has two redis EDA_MQ_* blocks (gunicorn + daphne
+            # containers); WORKER_KIND=websocket belongs on the daphne one, so
+            # insert after the SECOND `cluster_endpoint / optional: true` (matches
+            # the bundle's placement before the daphne resources block).
+            perl -0pi -e 'my $c=0; s/(              key: cluster_endpoint\n              optional: true\n)/++$c==2 ? $1 . qq(        - name: EDA_WORKER_KIND\n          value: "websocket"\n) : $1/ge' "$f"
+            grep -q 'EDA_WORKER_KIND' "$f" || { echo "ERROR: WORKER_KIND anchor not found for $short" >&2; git cherry-pick --abort; exit 1; }
+            git add -- "$f"
+            ;;
+        5680468d)
+            # skip-PostgreSQL-backup/restore: only restore/defaults/main.yml
+            # conflicts (a YAML end-marker vs added force_drop_db/postgres_skip_data
+            # keys). Bundle has the added keys — take upstream for this file.
+            f="roles/restore/defaults/main.yml"
+            git checkout --theirs -- "$f" && git add -- "$f"
+            ;;
+        *)
+            if [ -n "$non_docs" ]; then
+                echo "    ERROR: cherry-pick $short conflicts outside docs/ with no known resolution:" >&2
+                printf '      %s\n' $non_docs >&2
+                git cherry-pick --abort
+                exit 1
+            fi
+            ;;
+        esac
+        echo "      (resolved conflict for $short: $(printf '%s' "$unmerged" | tr '\n' ' '))"
+        GIT_EDITOR=true git cherry-pick --continue >/dev/null
+    fi
 done
 
 cd "$SCRIPT_DIR"

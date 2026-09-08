@@ -70,34 +70,35 @@ ARG DAB_COMMIT
 ARG DAB_EXTRAS="channel-auth,rbac,redis-client,resource-registry,jwt-consumer,rest-filters,feature-flags"
 RUN sed -i '/^django-ansible-base/,/^\]/d' pyproject.toml && \
     poetry lock --no-interaction && \
-    poetry install -E all --no-root --no-cache && \
+    poetry install -E all --without test,lint,dev --no-root --no-cache && \
     pip install --no-cache-dir \
         "django-ansible-base[${DAB_EXTRAS}] @ git+https://github.com/ansible/django-ansible-base@${DAB_COMMIT}"
 
 # Install runtime tools
 RUN pip install --no-cache-dir gunicorn daphne
 
-# CVE bumps: force-upgrade past poetry/pyproject
-# pins where EDA 1.2.8 still resolved to vulnerable transitive versions.
-#   django   5.2.9  -> 5.2.13   CVE-2026-3902, -33034, -25673, -1287, -1207, -1312, -33033
-#   jinja2   3.1.3  -> 3.1.6    CVE-2024-34064, -56201, -56326, CVE-2025-27516
-#   idna     3.4    -> 3.7      CVE-2024-3651 (ReDoS)
-#   sqlparse 0.5.3  -> 0.5.4    GHSA-27jp-wm6q-gp25
-#   pip      24.2   -> 26.1+    CVE-2026-6357, CVE-2025-8869
-#   requests 2.31.0 -> 2.33.0   CVE-2024-35195, -47081, CVE-2026-25645
-#   pynacl   1.5.0  -> 1.6.2    CVE-2025-69277
-#   azure-core 1.34.0 -> 1.38.0 CVE-2026-21226 (deserialization)
-#   ecdsa    0.18.0 -> 0.19.2   CVE-2026-33936 (HIGH CVE-2024-23342 has no upstream fix)
+# CVE bumps — residual critical/high from `docker scout` on the clean 1.2.12
+# build (reset 2026-09). 1.2.12's poetry.lock still resolves vulnerable
+# transitives, so these force-upgrade past it. Each clears its finding with a
+# stable, wheel-installable fix.
+#   django   5.2.9  -> 5.2.13  (5H: CVE-2026-1287/-1207 SQLi, -3902 auth-bypass, -33034 DoS, +1)
+#   sqlparse 0.5.3  -> 0.6.0   (3H: CVE-2026-71491/-54284 ReDoS-DoS, -59893)
+#   azure-core 1.34.0 -> 1.38.0 (1H: CVE-2026-21226 untrusted deserialization)
+#   click    8.1.3  -> 8.3.3   (1H)
+#
+# NOT bumped (documented):
+#   cryptography 46.0.7 (3H: GHSA-537c/CVE-2026-69249/-69247) — pyOpenSSL 26.0.0
+#     hard-caps cryptography>=46.0.0,<47; fixes need >=48.0.1. Deferred (needs a
+#     pyopenssl stack bump). Same block as the AWX 4.7.16 refresh.
+#   twisted 24.7.0 (1H: CVE-2026-42304) — only fix is 26.4.0rc2 (pre-release).
+#   ecdsa 0.18.0 (1H: CVE-2024-23342 Minerva timing) — no upstream fix exists.
+#   black/httpie (were 1C+2H) — dev/lint/test-group deps, now excluded from the
+#     image via `poetry install --without test,lint,dev` above (not shipped).
 RUN pip install --no-cache-dir --upgrade \
     "django>=5.2.13,<6.0" \
-    "jinja2>=3.1.6,<4.0" \
-    "idna>=3.7,<4.0" \
-    "sqlparse>=0.5.4,<0.6" \
-    "pip>=26.1,<27.0" \
-    "requests>=2.33.0,<3.0" \
-    "pynacl>=1.6.2,<2.0" \
+    "sqlparse>=0.6.0,<0.7" \
     "azure-core>=1.38.0,<2.0" \
-    "ecdsa>=0.19.2,<0.20"
+    "click>=8.3.3,<9.0"
 
 # Copy full source and install the EDA package itself
 COPY . $SOURCES_DIR/

@@ -8,7 +8,7 @@
 #   ./build.sh --push                              # Build multiarch and push
 #   ./build.sh --no-cache                          # Force full rebuild
 #   PLATFORMS=linux/amd64 ./build.sh --push        # Push single arch
-#   VERSION=1.2.8 ./build.sh                       # Custom version
+#   VERSION=1.2.12 ./build.sh                      # Custom version
 #
 
 set -euo pipefail
@@ -16,8 +16,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # SRPM URLs (public FTP, Apache-2.0 licensed)
-EDA_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-eda-controller-1.2.8-1.el9ap.src.rpm"
-AP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.8-1.el9ap.src.rpm"
+EDA_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-eda-controller-1.2.12-1.el9ap.src.rpm"
+AP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.13-1.el9ap.src.rpm"
 
 # Local cache directories
 EDA_SRPM_DIR="${SCRIPT_DIR}/eda-srpm"
@@ -29,13 +29,17 @@ AP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/eda-src}"
 AP_UI_DIR="${AP_UI_DIR:-${SCRIPT_DIR}/ap-ui}"
 
-# DAB commit on public ansible/django-ansible-base — devel HEAD on the day
-# the AAP 2.6.8 SRPM was cut (2026-04-23).
-DAB_COMMIT="5f6343b9b98c5e48e7a4dc087bf931cd2bd5f104"
+# DAB commit on public ansible/django-ansible-base. The EDA 1.2.12 SRPM was cut
+# 2026-08-14 (spec %changelog). We pin 829db2e (public devel, 2026-08-18) — the
+# SAME commit as the AWX 4.7.16 refresh — for cross-component DAB parity across
+# the release wave (identical resource-server/JWT behavior when AWX + EDA share
+# a cluster). EDA installs DAB via pip from this SHA (Dockerfile); the SRPM does
+# not bundle DAB. EDA 1.2.12 adds no new ansible_base.* symbols, so it resolves.
+DAB_COMMIT="829db2e38b3683c0205d5b38b3453f274af60c7a"
 
 # Image configuration
-VERSION="${VERSION:-1.2.8}"
-UI_VERSION="${UI_VERSION:-2.6.8}"
+VERSION="${VERSION:-1.2.12}"
+UI_VERSION="${UI_VERSION:-2.6.13}"
 EDA_IMAGE_NAME="${EDA_IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-server}"
 EDA_IMAGE_TAG="${EDA_IMAGE_TAG:-$VERSION}"
 UI_IMAGE_NAME="${UI_IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-ui}"
@@ -87,6 +91,14 @@ else
 fi
 echo "  Push:        ${PUSH}"
 echo "  No cache:    ${NO_CACHE}"
+echo ""
+
+# -------------------------------------------------------------------
+# Always start fresh: wipe extracted trees so a version bump re-extracts
+# (the cached .src.rpm files are kept to avoid re-downloading).
+# -------------------------------------------------------------------
+echo "=> Wiping extracted trees (${BUILD_DIR}, ${AP_UI_DIR})"
+rm -rf "${BUILD_DIR}" "${AP_UI_DIR}"
 echo ""
 
 # -------------------------------------------------------------------
