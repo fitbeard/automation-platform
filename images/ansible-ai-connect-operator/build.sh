@@ -2,18 +2,30 @@
 #
 # Build mcp-operator container image from public upstream code.
 #
-# Reproduces what ships in AAP 2.6-709 for the MCP server kind, but
+# Reproduces the MCP server kind from platform-operator-bundle:2.6-1787258025,
 # scoped to MCP-only: the upstream `ansible/ansible-ai-connect-operator`
 # binary manages BOTH AnsibleAIConnect (chatbot/Lightspeed/Wisdom — RH/IBM
 # enterprise stack we skip) AND AnsibleMCPConnect (MCP server, standalone).
 # We deploy the whole binary; only AnsibleMCPConnect CRs ever get applied,
 # so the chatbot/Lightspeed code paths never execute.
 #
+# REFRESH POLICY — MINIMAL (2026-09). Unlike awx/eda-operator, this operator's
+# downstream is NOT cleanly reconstructable from public commits: the bundle
+# stays on ansible-operator v1.36.1 + kube-rbac-proxy (private stable-2.6),
+# while public main took operator-sdk v1.40 (2026-03-03) → v1.42.3, removing
+# kube-rbac-proxy and restructuring config. Every new bundle feature (MCP
+# backup/restore, telemetry_hmac, installer_id, proxy-env) is layered on that
+# post-v1.40 public structure and cannot be cherry-picked onto our pre-v1.40
+# baseline. Those features are unused in our deployment (we only exercise the
+# AnsibleMCPConnect deploy path), so we KEEP the verified baseline and skip
+# them. The only graft is the operator-side half of the MCP_PORT/service-link
+# fix (patch 0002), which pairs with the mcp-server image we ship.
+#
 # Build steps:
 #   1. git clone https://github.com/ansible/ansible-ai-connect-operator
-#   2. git checkout 1e1d9cc3a8847b4530db7b7262beab446a85b2e6   (baseline)
+#   2. git checkout 1e1d9cc3a8847b4530db7b7262beab446a85b2e6   (baseline, pre-v1.40)
 #   3. (no cherry-picks — baseline already has full MCP capability)
-#   4. (no local patches — operator stays upstream-pure)
+#   4. patch.sh applies local patches (0001 drop-chatbot-watch, 0002 enableServiceLinks)
 #   5. snapshot only mcpconnect.ansible.com_*.yaml CRDs (skip aiconnect ones)
 #   6. docker build
 #
@@ -50,7 +62,7 @@
 #
 # Env overrides:
 #   IMAGE_NAME=...       # default: quay.io/fitbeard/automation-platform/ansible-ai-connect-operator
-#   IMAGE_TAG=...        # default: 2.6-709
+#   IMAGE_TAG=...        # default: 2.6-1787258025
 #   BASELINE_COMMIT=...  # default: 1e1d9cc... (last commit before v1.40 upgrade)
 
 set -euo pipefail
@@ -84,7 +96,7 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-709}"
+VERSION="${VERSION:-2.6-1787258025}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/ansible-ai-connect-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"

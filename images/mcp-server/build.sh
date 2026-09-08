@@ -22,7 +22,7 @@
 #
 # Env overrides:
 #   IMAGE_NAME=...        # default: quay.io/fitbeard/automation-platform/mcp-server
-#   MCP_SERVER_SHA=...    # default: a9281de4... (latest stable on main)
+#   MCP_SERVER_SHA=...    # default: 03876616... (public main HEAD)
 #   DUMB_INIT_TAG=...     # default: v1.2.5
 #   IMAGE_TAG=...         # default: <short-sha>
 
@@ -34,21 +34,26 @@ DUMB_INIT_DIR="${SCRIPT_DIR}/deps/dumb-init"
 
 # --- Upstream pins ----------------------------------------------------------
 #
-# We ship a9281de4 (2026-05-09 "Merge PR #149") — public main HEAD at the time
-# of our last build. Downstream tech-preview tag 2.6.20260325 is
-# pinned to public commit 1c762dd (2026-03-09 "fix: CVE-2026-30827:
-# express-rate-limit"); identified by file-content SHA-1 fingerprinting of
-# the source-image bundle (see DOWNSTREAM-PIN.md for methodology).
+# We ship 03876616 (2026-09-02 "Fix CVE-2026-84375: js-yaml 4.3.2", public
+# main HEAD at refresh time). Downstream tech-preview image
+# mcp-server-rhel9:2.6.20260824-1787228159 is built from PRIVATE commit
+# 97cf5c320f5e989b0967717083c1e966efc6539e (read from the image's own
+# `vcs-ref` / `org.opencontainers.image.revision` labels) — that SHA is NOT on
+# public github.com/ansible/aap-mcp-server, so RH now builds mcp-server from a
+# private branch (same reality as the controller SRPM). No public commit to pin
+# to; we track public main HEAD instead.
 #
-# We pick the newer pin for: 4 CVE/npm-audit patches, the stateless-mode
-# rewrite (Apr 1-2), and the "early auth check on MCP POSTs" security fix
-# (Apr 22). All landed publicly between RH's pin and ours.
+# Shipping public main HEAD is a security uplift over RH's ~2026-08-24 cut:
+# adds fast-uri CVE-2026-75899/-75931 (Aug 27), MCP_PORT k8s service-link
+# hardening AAP-90657 (Sep 2, relevant on k8s/kind), and js-yaml CVE-2026-84375
+# (Sep 2) — while including RH's Aug content (ip-address CVE-2026-54272,
+# fast-uri CVE-2026-16221, OpenAPI-spec sync Aug 21).
 #
-# To rebuild from RH's exact pin (e.g. for parity testing):
-#   MCP_SERVER_SHA=1c762ddcc82ed783af186f0ae4d1d4dcfaf14bcc ./build.sh
+# Prior pin was a9281de4 (2026-05-08). RH-pin identification method: read the
+# runtime image's vcs-ref label (no source-bundle fingerprinting needed now).
 
 MCP_SERVER_URL="https://github.com/ansible/aap-mcp-server"
-MCP_SERVER_SHA="${MCP_SERVER_SHA:-a9281de41fc1ec006bcdf3936fbdc15521812cdf}"
+MCP_SERVER_SHA="${MCP_SERVER_SHA:-03876616275e34e779a539264341111088cc201a}"
 
 DUMB_INIT_URL="https://github.com/Yelp/dumb-init"
 DUMB_INIT_TAG="${DUMB_INIT_TAG:-v1.2.5}"
