@@ -48,8 +48,10 @@ RUN dnf -y update && dnf install -y 'dnf-command(config-manager)' && \
 RUN mkdir -p ~/.ssh && chmod 0700 ~/.ssh
 RUN ssh-keyscan github.com > ~/.ssh/known_hosts
 
-# CVE-2026-6357, CVE-2025-8869, CVE-2023-5752: bump system pip past 26.1 (was 23.2.1 from RPM).
-RUN pip3.12 install -vv "pip>=26.1" build
+# System pip is only used to install the `build` frontend below; the awx venv
+# gets its own pip via ensurepip. No CVE version floor here (reset 2026-09) —
+# re-audit the image and re-add a pin only if a finding requires it.
+RUN pip3.12 install -vv build
 
 # Install & build requirements
 ADD Makefile /tmp/Makefile
@@ -67,9 +69,6 @@ ARG DAB_PRETEND_VERSION
 RUN SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DJANGO_ANSIBLE_BASE=${DAB_PRETEND_VERSION} \
     cd /tmp && make requirements_awx
 
-# CVE-2026-6357: venv pip self-bump past 26.1 (was 25.3 from ensurepip bootstrap)
-RUN /var/lib/awx/venv/awx/bin/pip install --upgrade "pip>=26.1"
-
 ARG VERSION
 ARG SETUPTOOLS_SCM_PRETEND_VERSION
 # Use the distro provided npm to bootstrap Node 20 LTS (required for aap-ui / Vite build)
@@ -82,6 +81,14 @@ WORKDIR /tmp/src/
 # Pin setuptools<81 in pyproject.toml so isolated build envs get a version where
 # pkg_resources still works (removed in setuptools>=81, see deprecation warning).
 RUN sed -i 's/"setuptools>=45"/"setuptools>=45,<81"/' pyproject.toml
+
+# Apply the SRPM's own vendored-pip/distlib security patch to the awx venv.
+# Upstream ships this in requirements/patches and wires it via `make patch_pip`,
+# but only the top-level `requirements` target runs it — our build calls
+# `requirements_awx` directly, so invoke it explicitly here. This is upstream's
+# mitigation (not one of our overrides): it targets the ensurepip pip (25.3)
+# and no-ops cleanly if a future pip already contains the fix.
+RUN VENV_BASE=/var/lib/awx/venv make patch_pip
 
 # Build the UI from AAP UI source (aap-ui, Apache-2.0).
 # The source is copied into the build context by build.sh (section 6).
@@ -159,9 +166,10 @@ RUN dnf -y update && dnf install -y 'dnf-command(config-manager)' && \
     xmlsec1-openssl && \
     dnf -y clean all
 
-# CVE-2024-6345, CVE-2025-47273: upgrade system setuptools (65.5.1 from RPM → 80.x)
-# CVE-2026-6357 (pip), CVE-2024-6345 + CVE-2025-47273 (setuptools): system-pip + setuptools bumps.
-RUN pip3.12 install -vv virtualenv supervisor dumb-init build "pip>=26.1" "setuptools>=78.1.1,<81"
+# Runtime tooling. No CVE version floors (reset 2026-09) — re-audit and re-add
+# only what a finding requires. setuptools<81 is a FUNCTIONAL bound (pkg_resources
+# was removed in setuptools>=81), not a CVE override, so it stays.
+RUN pip3.12 install -vv virtualenv supervisor dumb-init build "setuptools<81"
 
 RUN rm -rf /root/.cache && rm -rf /tmp/*
 

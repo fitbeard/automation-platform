@@ -21,7 +21,7 @@
 #   ./build.sh --push                              # Build multiarch (amd64+arm64) and push
 #   ./build.sh --no-cache                          # Force full rebuild (no Docker cache)
 #   PLATFORMS=linux/amd64 ./build.sh --push        # Push single arch to registry
-#   VERSION=25.0.0 ./build.sh                      # Override image tag
+#   VERSION=26.0.0 ./build.sh                      # Override image tag
 #
 
 set -euo pipefail
@@ -30,11 +30,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- SRPM sources (public FTP, Apache-2.0) -----------------------------------
 
-AWX_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-controller-4.7.11-2.el9ap.src.rpm"
+AWX_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-controller-4.7.16-1.el9ap.src.rpm"
 AWX_SRPM_DIR="${SCRIPT_DIR}/awx-srpm"
 AWX_TARBALL_GLOB="automation-controller-*.tar.gz"
 
-AAP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.8-1.el9ap.src.rpm"
+AAP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.13-1.el9ap.src.rpm"
 AAP_UI_SRPM_DIR="${SCRIPT_DIR}/aap-ui-srpm"
 AAP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
 
@@ -44,22 +44,20 @@ AWX_LOGOS_REPO="https://github.com/ansible/awx-logos.git"
 AWX_LOGOS_COMMIT="bae4e6cfd16f5e7b814ed873a2fef68b6d90a354"
 AWX_LOGOS_DIR="${AWX_LOGOS_DIR:-${SCRIPT_DIR}/awx-logos}"
 
-# DAB commit on public ansible/django-ansible-base — devel HEAD on the day
-# the AWX 4.7.11 SRPM was cut (2026-04-23). Includes ~25 fixes/features
-# beyond our previous 75270499a684 (2026-03-10) pin: cryptography CVE-2026-26007
-# bump, RBAC TOCTOU race fix, OAuth Token-prefix support (AAP-68669), workload
-# identity rework, profiling middleware, OIDC discovery fixes.
-#
-# The 4.7.11 SRPM ships private stable-2.6 commit `6ce102398b0e` (~13 additive
-# DAB-internal CVE/feature backports — none referenced by AWX 4.7.11 source per
-# symbol-grep audit). We chase devel-on-the-cut-date instead because it's the
-# closest publicly-reachable commit to bundled DAB date.
-DAB_COMMIT="5f6343b9b98c5e48e7a4dc087bf931cd2bd5f104"
+# DAB commit on public ansible/django-ansible-base — devel commit nearest the
+# AWX 4.7.16 SRPM cut date (2026-08-18, per spec %changelog). 829db2e was
+# committed 2026-08-18T10:27Z (same day); the next devel commit is 2026-08-31,
+# so this is the closest publicly-reachable point to the bundled DAB.
+# The 4.7.16 SRPM ships private stable-2.6 DAB `9dc9c92d0108` (was `6ce102398b0e`
+# in 4.7.11); we chase public devel-on-the-cut-date instead. AWX references no
+# new DAB symbols across these patch bumps, so the public-only chain resolves.
+DAB_COMMIT="829db2e38b3683c0205d5b38b3453f274af60c7a"
 
 # --- Image configuration -----------------------------------------------------
 
-# Using 25.0.0 as a clean version reset for the SRPM-based rebuild.
-VERSION="${VERSION:-25.0.0}"
+# Clean version scheme for the SRPM-based rebuild: 25.0.0 = controller 4.7.11,
+# 26.0.0 = controller 4.7.16 refresh.
+VERSION="${VERSION:-26.0.0}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 
@@ -68,10 +66,10 @@ AAP_UI_DIR="${AAP_UI_DIR:-${SCRIPT_DIR}/aap-ui}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="awx-multiarch"
 
-# DAB setuptools_scm pretend version. DAB commit 5f6343b is dated 2026-04-23
-# on public devel; nearest tag is 2026.3.19 (4 weeks back), so we use the
-# commit-date pseudo-version to keep it monotonic with the SRPM cut date.
-DAB_PRETEND_VERSION="${DAB_PRETEND_VERSION:-2.6.20260423}"
+# DAB setuptools_scm pretend version. DAB commit 829db2e is dated 2026-08-18
+# on public devel; we use the commit-date pseudo-version to keep it monotonic
+# with the SRPM cut date.
+DAB_PRETEND_VERSION="${DAB_PRETEND_VERSION:-2.6.20260818}"
 
 # --- Pre-flight --------------------------------------------------------------
 
@@ -102,9 +100,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-echo "=== AWX Rebuild from AAP 2.6.8 SRPM (controller 4.7.11) ==="
-echo "  SRPM:      automation-controller-4.7.11-2.el9ap.src.rpm"
-echo "  UI SRPM:   automation-platform-ui-2.6.8-1.el9ap.src.rpm"
+echo "=== AWX Rebuild from AAP SRPM (controller 4.7.16) ==="
+echo "  SRPM:      automation-controller-4.7.16-1.el9ap.src.rpm"
+echo "  UI SRPM:   automation-platform-ui-2.6.13-1.el9ap.src.rpm"
 echo "  Version:   ${VERSION}"
 echo "  Image:     ${IMAGE_NAME}:${IMAGE_TAG}"
 if [ "${PUSH}" = true ]; then
@@ -212,75 +210,59 @@ echo ""
 # -------------------------------------------------------------------
 # 5. CVE bumps on pinned deps.
 #
-#    4.7.10 already ships: django==5.2.10, wheel==0.46.3, urllib3==2.6.3,
-#    brotli 1.2.0, pycares 4.11.0 — those CVE bumps are no-ops now.
+#    RESET 2026-09: all prior per-dep overrides were removed first, then a
+#    clean 4.7.16 image was scanned with `docker scout cves`. The 4.7.16 SRPM
+#    already carries most fixes we used to force (dynaconf 3.2.13, cryptography
+#    46.0.7, aiohttp 3.14.3, pyasn1 0.6.4, jwcrypto 1.5.7, urllib3 2.7.0,
+#    pyjwt 2.13.0, ...). Upstream also ships its own pip/distlib patch, applied
+#    via `make patch_pip` in the Dockerfile.
 #
-#    Remaining bumps (safe within-major patch/minor upgrades):
+#    The bumps below are ONLY the residual critical/high findings from that
+#    scan that (a) have a stable fix and (b) install as wheels (none are in
+#    the Makefile SRC_ONLY_PKGS list cffi,lxml,pycparser,psycopg,twilio,xmlsec,
+#    so no source recompile). Each clears its finding without a major-version
+#    risk.
 # -------------------------------------------------------------------
-echo "=> Patching requirements.txt for CVE fixes..."
+echo "=> Re-applying residual CVE bumps (post-scan)..."
 REQFILE="requirements/requirements.txt"
 
-# Medium: python-ldap 3.4.4 → 3.4.5 (filter escape bypass)
-sedi 's/^python-ldap==3.4.4$/python-ldap==3.4.5/' "$REQFILE"
+# CRITICAL CVE-2026-78676 + 24×HIGH (OS/argument/code injection, path traversal,
+# info exposure): gitpython 3.1.42 → 3.1.59 (first release clearing all).
+sedi 's/^gitpython==3.1.42$/gitpython==3.1.59/' "$REQFILE"
 
-# Medium: sqlparse 0.5.3 → 0.5.5 (Django dependency)
-sedi 's/^sqlparse==0.5.3$/sqlparse==0.5.5/' "$REQFILE"
-
-# Medium: requests 2.32.3 → 2.32.4
-sedi 's/^requests==2.32.3$/requests==2.32.4/' "$REQFILE"
-
-# Medium: jwcrypto 1.5.4 → 1.5.6
-sedi 's/^jwcrypto==1.5.4$/jwcrypto==1.5.6/' "$REQFILE"
-
-# Medium: zipp 3.17.0 → 3.19.1 (DoS)
-sedi 's/^zipp==3.17.0$/zipp==3.19.1/' "$REQFILE"
-
-# Medium: filelock 3.13.1 → 3.20.3 (TOCTOU symlink)
-sedi 's/^filelock==3.13.1$/filelock==3.20.3/' "$REQFILE"
-
-# Medium: azure-identity 1.15.0 → 1.16.1 (privilege escalation)
-sedi 's/^azure-identity==1.15.0$/azure-identity==1.16.1/' "$REQFILE"
-
-# High: azure-core 1.30.0 → 1.38.0 (GHSA-jm66-cg57-jjv5)
-sedi 's/^azure-core==1.30.0$/azure-core==1.38.0/' "$REQFILE"
-
-# High×2 + Medium×1: django 5.2.12 → 5.2.13
-#   CVE-2026-3902 (auth bypass), CVE-2026-33034 (DoS), CVE-2026-33033 (algo complexity)
+# HIGH×2: django 5.2.12 → 5.2.13 (CVE-2026-3902 auth-bypass, CVE-2026-33034 DoS)
 sedi 's/^django==5.2.12$/django==5.2.13/' "$REQFILE"
 
-# High: dynaconf 3.2.10 → 3.2.13 (CVE-2026-33154 template injection)
-sedi 's/^dynaconf==3.2.10$/dynaconf==3.2.13/' "$REQFILE"
+# cryptography 46.0.7: NOT bumpable — LEFT at upstream. Its 3 highs (GHSA-537c
+# OOB read fixed 48.0.1, CVE-2026-69249 DoS fixed 49.0.0, CVE-2026-69247 timing
+# fixed 50.0.0) all need >=48.0.1, but pyopenssl==26.0.0 hard-caps
+# cryptography<47 (and msal==1.35.1 caps <49). Any bump is ResolutionImpossible
+# without also bumping pyopenssl + msal — a cascading crypto/Azure-stack change
+# deferred (needs its own compat validation).
 
-# High: pyasn1 0.6.2 → 0.6.3 (CVE-2026-30922 uncontrolled recursion)
-sedi 's/^pyasn1==0.6.2$/pyasn1==0.6.3/' "$REQFILE"
+# HIGH×3: sqlparse 0.5.3 → 0.6.0 (CVE-2026-71491 / -54284 ReDoS-DoS, -59893).
+# Even 0.5.5 is affected (<=0.5.5); 0.6.0 is the fix line.
+sedi 's/^sqlparse==0.5.3$/sqlparse==0.6.0/' "$REQFILE"
 
-# High×4: gitpython 3.1.42 → 3.1.49
-#   CVE-2026-42215, -42284, -44244, -44243 (cmd/arg/code injection + path traversal)
-sedi 's/^gitpython==3.1.42$/gitpython==3.1.49/' "$REQFILE"
+# HIGH×2: msgpack 1.1.1 → 1.2.1 (GHSA-6v7p use-after-free, CVE-2026-57585)
+sedi 's/^msgpack==1.1.1$/msgpack==1.2.1/' "$REQFILE"
 
-# Medium×4: aiohttp[speedups] 3.13.3 → 3.13.4
-#   CVE-2026-22815, -34516 (DoS), -34515 (path traversal), -34525 (input validation)
-sedi 's/^aiohttp\[speedups\]==3.13.3$/aiohttp[speedups]==3.13.4/' "$REQFILE"
+# HIGH: azure-core 1.30.0 → 1.38.0 (CVE-2026-21226 untrusted deserialization)
+sedi 's/^azure-core==1.30.0$/azure-core==1.38.0/' "$REQFILE"
 
-# Medium: cryptography 46.0.6 → 46.0.7 (CVE-2026-39892 buffer bounds)
-sedi 's/^cryptography==46.0.6$/cryptography==46.0.7/' "$REQFILE"
+# Deliberately NOT bumped (documented):
+#   - lxml 4.9.4 → 6.1.0 (CVE-2026-41066 XXE): SRC_ONLY (source-compiled) +
+#     major 4→6; SAML/XML processing regression risk. Deferred.
+#   - protobuf 4.25.8 → 5.29.6/6.33.5 (CVE-2026-0994): major 4→6; gRPC/operator
+#     wire-compat risk. Deferred.
+#   - twisted 24.7.0 (CVE-2026-42304 DoS): only fix is 26.4.0rc2 (pre-release).
+#   - setuptools 68.2.2 / wheel 0.45.1 / jaraco-context 5.3.0: system-RPM +
+#     build-tooling shadows only; the awx venv already ships setuptools 80.9.0,
+#     wheel 0.46.3, jaraco.context 4.3.0 (all fixed/unaffected). False positives.
+#   - go stdlib 1.26.5 (CVE-2026-39821 +5H): Rocky 9 base-image binaries;
+#     tracked by the Dockerfile `dnf -y update` when Rocky ships 1.26.6.
 
-# Medium: requests 2.32.4 → 2.33.0 (CVE-2026-25645 insecure tempfile)
-sedi 's/^requests==2.32.4$/requests==2.33.0/' "$REQFILE"
-
-# Medium: pynacl 1.5.0 → 1.6.2 (CVE-2025-69277 incomplete disallow list)
-sedi 's/^pynacl==1.5.0$/pynacl==1.6.2/' "$REQFILE"
-
-# Medium: social-auth-app-django 5.4.2 → 5.6.0 (CVE-2025-61783 auth bypass spoofing)
-sedi 's/^social-auth-app-django==5.4.2$/social-auth-app-django==5.6.0/' "$REQFILE"
-
-# Skipped (documented for future runs):
-#   - lxml 4.9.4 → 6.1.0 (major bump; SAML/XML processing risk; CVE-2026-41066 XXE)
-#   - protobuf 4.25.8 → 5.29.6+/6.33.5 (major bump; gRPC/operator risk; CVE-2026-0994)
-#   - twisted[tls] 24.7.0 → 26.4.0rc2 (RC-only fix; CVE-2026-42304 DoS)
-#   - jwcrypto 1.5.6 (no fix yet for CVE-2026-39373)
-
-echo "   Patched $(grep -c '==' "$REQFILE") packages in requirements.txt"
+echo "   Patched $(grep -c '==' "$REQFILE") pinned packages"
 echo "   Done."
 echo ""
 
