@@ -8,9 +8,9 @@
 # directory because we ship custom assets from there.
 #
 # Pinned versions (SRPM build dates in comments):
-#   - automation-gateway:     2.6.20260422-1 (build date 2026-04-22)
-#   - automation-platform-ui: 2.6.8-1       (same SRPM AWX uses)
-#   - django-ansible-base:    5f6343b9b98c  (latest devel before SRPM cut; override via DAB_COMMIT=...)
+#   - automation-gateway:     2.6.20260824-1 (SRPM cut 2026-08-14)
+#   - automation-platform-ui: 2.6.13-1      (same SRPM AWX/EDA use)
+#   - django-ansible-base:    829db2e38b36  (public devel nearest the 2026-08-14 cut; parity w/ AWX 4.7.16 + EDA 1.2.12; override via DAB_COMMIT=...)
 #   - python:                 3.12          (matches new gateway SRPM spec)
 #
 # Usage:
@@ -29,29 +29,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Pinned versions ---------------------------------------------------------
 
-GATEWAY_SRPM_URL="${GATEWAY_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-gateway-2.6.20260422-1.el9ap.src.rpm}"
+GATEWAY_SRPM_URL="${GATEWAY_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-gateway-2.6.20260824-1.el9ap.src.rpm}"
 GATEWAY_TARBALL_GLOB="aap-gateway-*.tar.gz"
 GATEWAY_SRPM_DIR="${GATEWAY_SRPM_DIR:-${SCRIPT_DIR}/gateway-srpm}"
 
-AAP_UI_SRPM_URL="${AAP_UI_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.8-1.el9ap.src.rpm}"
+AAP_UI_SRPM_URL="${AAP_UI_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.13-1.el9ap.src.rpm}"
 AAP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
 AAP_UI_SRPM_DIR="${AAP_UI_SRPM_DIR:-${SCRIPT_DIR}/aap-ui-srpm}"
 AAP_UI_DIR="${AAP_UI_DIR:-${SCRIPT_DIR}/aap-ui}"
 
-VERSION="${VERSION:-2.6.20260422}"
+VERSION="${VERSION:-2.6.20260824}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/gateway}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/gateway-src}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="gateway-multiarch"
 
-# Gateway 2.6.20260422 sets EMAIL_ENFORCEMENT_VIA_SERIALIZER = True on
-# its User model — DAB at 5f6343b doesn't yet read this flag (the
-# email-enforcement signals landed on devel later, 2026-05-06 d5100f6).
-# At our pin the flag is set but inert. Gateway's email policy is fully
-# enforced in its own _validate_email_change serializer + reverse-sync
-# GetOrCreateProcessor regardless of DAB version.
-DAB_COMMIT="${DAB_COMMIT:-5f6343b9b98c5e48e7a4dc087bf931cd2bd5f104}"
+# Gateway sets EMAIL_ENFORCEMENT_VIA_SERIALIZER = True on its User model.
+# DAB's email-enforcement signals landed on devel 2026-05-06 (d5100f6), so at
+# our 829db2e pin (2026-08-18) DAB now reads this flag — consistent with
+# gateway's own _validate_email_change serializer + reverse-sync
+# GetOrCreateProcessor (both enforce the same policy). No behavior conflict.
+DAB_COMMIT="${DAB_COMMIT:-829db2e38b3683c0205d5b38b3453f274af60c7a}"
 
 # --- Pre-flight --------------------------------------------------------------
 

@@ -1,0 +1,63 @@
+From 251ff63aa1969616b0caf731fe97a7e4a2a802c1 Mon Sep 17 00:00:00 2001
+From: AAP Rebuild <aap-rebuild-bot@localhost>
+Date: Tue, 15 Sep 2026 16:46:37 +0300
+Subject: [PATCH] patch: idempotent postgres host FQDN resolution
+ (upgrade-safe)
+
+The 2.6-1787258025 bundle unconditionally appends
+'.<namespace>.svc.cluster.local' to the postgres host read from the
+postgres-configuration secret (initialize_databases.yml, backup/postgres.yml,
+restore/restore_postgres.yml). That's fine for a fresh install (bare service
+name in the secret) but DOUBLE-appends for any existing deployment whose secret
+already holds an FQDN host -> 'name or service not known'. Our pre-refresh
+builds wrote an FQDN host (old patch 0008), so every upgrade would break.
+
+Make the append idempotent: only add the .svc suffix when the host is not
+already an in-cluster FQDN (no '.svc.' marker). Handles bare + FQDN + external
+hosts, and needs no manual secret migration on upgrade. Replaces the old
+secret-host-FQDN patch (which the bundle's own logic superseded).
+---
+ roles/ansibleautomationplatformbackup/tasks/postgres.yml        | 2 +-
+ .../ansibleautomationplatformrestore/tasks/restore_postgres.yml | 2 +-
+ roles/postgres/tasks/initialize_databases.yml                   | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/roles/ansibleautomationplatformbackup/tasks/postgres.yml b/roles/ansibleautomationplatformbackup/tasks/postgres.yml
+index 7dba810..8074a1f 100644
+--- a/roles/ansibleautomationplatformbackup/tasks/postgres.yml
++++ b/roles/ansibleautomationplatformbackup/tasks/postgres.yml
+@@ -33,7 +33,7 @@
+ 
+ - name: Set resolvable_db_host for postgres pod
+   ansible.builtin.set_fact:
+-    resolvable_db_host: '{{ (aap_postgres_type == "managed") | ternary(aap_postgres_host + "." + ansible_operator_meta.namespace + ".svc.cluster.local", aap_postgres_host) }}'  # yamllint disable-line rule:line-length
++    resolvable_db_host: '{{ (aap_postgres_type == "managed") | ternary((aap_postgres_host if ".svc." in aap_postgres_host else aap_postgres_host + "." + ansible_operator_meta.namespace + ".svc.cluster.local"), aap_postgres_host) }}'  # yamllint disable-line rule:line-length
+   no_log: "{{ no_log }}"
+ 
+ - name: Set pg_dump command
+diff --git a/roles/ansibleautomationplatformrestore/tasks/restore_postgres.yml b/roles/ansibleautomationplatformrestore/tasks/restore_postgres.yml
+index 139e730..d7e76a7 100644
+--- a/roles/ansibleautomationplatformrestore/tasks/restore_postgres.yml
++++ b/roles/ansibleautomationplatformrestore/tasks/restore_postgres.yml
+@@ -44,7 +44,7 @@
+ 
+ - name: Set resolvable_db_host for managed postgres pod
+   ansible.builtin.set_fact:
+-    resolvable_db_host: "{{ aap_postgres_host }}.{{ ansible_operator_meta.namespace }}.svc.{{ cluster_name }}"
++    resolvable_db_host: "{{ aap_postgres_host if '.svc.' in aap_postgres_host else aap_postgres_host + '.' + ansible_operator_meta.namespace + '.svc.' + cluster_name }}"
+   no_log: "{{ no_log }}"
+   when: aap_postgres_type == 'managed'
+ 
+diff --git a/roles/postgres/tasks/initialize_databases.yml b/roles/postgres/tasks/initialize_databases.yml
+index c8ce555..982161a 100644
+--- a/roles/postgres/tasks/initialize_databases.yml
++++ b/roles/postgres/tasks/initialize_databases.yml
+@@ -1,7 +1,7 @@
+ ---
+ - name: Set postgres admin connection parameters
+   ansible.builtin.set_fact:
+-    _postgres_login_host: "{{ managed_database | bool | ternary(aap_postgres_host + '.' + ansible_operator_meta.namespace + '.svc.cluster.local', aap_postgres_host) }}"
++    _postgres_login_host: "{{ managed_database | bool | ternary((aap_postgres_host if '.svc.' in aap_postgres_host else aap_postgres_host + '.' + ansible_operator_meta.namespace + '.svc.cluster.local'), aap_postgres_host) }}"
+     _postgres_login_port: "{{ aap_postgres_port }}"
+     _postgres_login_user: "postgres"
+     _postgres_admin_password: "{{ gateway_pg_config.resources[0].data.postgres_admin_password | b64decode }}"
