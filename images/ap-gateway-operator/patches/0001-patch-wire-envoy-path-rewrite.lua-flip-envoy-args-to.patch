@@ -1,158 +1,80 @@
-From f28640033e9e222eda6522ffaa290a9329cc6fd5 Mon Sep 17 00:00:00 2001
+From d4e673b78fd6420ec3e3f26b21750561f6619a6a Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
-Date: Wed, 6 May 2026 11:33:11 +0300
-Subject: [PATCH] patch: wire envoy-path-rewrite.lua + flip envoy args to
- PATH-relative
+Date: Tue, 15 Sep 2026 16:32:22 +0300
+Subject: [PATCH] patch: flip envoy binary to PATH-relative + init-copy
+ path-rewrite lua
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Three coupled changes so the gateway deployment works against stock
-docker.io/envoyproxy/envoy (which has /usr/local/bin/envoy, not
-/usr/bin/envoy, and does NOT ship the lua file):
-
-1. roles/ansibleautomationplatform/files/envoy-path-rewrite.lua —
-   the lua extracted from the gateway runtime image (built from
-   automation-gateway-2.6.20260325 SRPM). Ships the path-rewrite logic
-   the operator needs to mount alongside envoy.yaml.
-
-2. roles/ansibleautomationplatform/templates/envoy.configmap.yaml.j2 —
-   add a second data key 'envoy-path-rewrite.lua' populated via
-   lookup('file', 'envoy-path-rewrite.lua') so the configmap can be
-   subPath-mounted into the proxy container.
-
-3. roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2 —
-   flip proxy container args from '/usr/bin/envoy' to 'envoy' (PATH-
-   relative, works on both stock envoyproxy/envoy and the maistra-proxy
-   image), and add a second subPath mount for the lua file at
-   /etc/ansible-automation-platform/gateway/envoy-path-rewrite.lua so
-   envoy.yaml's filter-config reference resolves.
+The 2.6-1787258025 bundle productized the path-rewrite lua: the gateway image
+ships tools/scripts/envoy-path-rewrite.lua at GATEWAY_PATH_REWRITE_SCRIPT_FILE
+and the gateway xDS references it as a {filename} source_code. envoy loads that
+file from the PROXY container FS; RH assumes their maistra proxy image has it.
+We run STOCK docker.io/envoyproxy/envoy, so:
+  1. flip the proxy args '/usr/bin/envoy' -> 'envoy' in combine_defaults.yml
+     (_proxy_args loop; stock envoy is on PATH, not RH's /usr/bin/envoy), and
+  2. add an initContainer that runs the GATEWAY image and copies its baked lua
+     into a shared emptyDir, which the proxy container mounts at the
+     GATEWAY_PATH_REWRITE_SCRIPT_FILE path.
+No duplicated lua file and no envoy ConfigMap edit — the gateway image is the
+single source of the script (identical to what we used to embed).
 ---
- .../files/envoy-path-rewrite.lua              | 83 +++++++++++++++++++
- .../templates/envoy.configmap.yaml.j2         |  2 +
- .../templates/gateway.deployment.yaml.j2      |  5 +-
- 3 files changed, 89 insertions(+), 1 deletion(-)
- create mode 100644 roles/ansibleautomationplatform/files/envoy-path-rewrite.lua
+ .../tasks/combine_defaults.yml                   |  2 +-
+ .../templates/gateway.deployment.yaml.j2         | 16 ++++++++++++++++
+ 2 files changed, 17 insertions(+), 1 deletion(-)
 
-diff --git a/roles/ansibleautomationplatform/files/envoy-path-rewrite.lua b/roles/ansibleautomationplatform/files/envoy-path-rewrite.lua
-new file mode 100644
-index 0000000..b5ddd15
---- /dev/null
-+++ b/roles/ansibleautomationplatform/files/envoy-path-rewrite.lua
-@@ -0,0 +1,83 @@
-+function envoy_on_response(handle)
-+    -- This script rewrites urls in the response by replacing the service base path
-+    -- in Location headers and in the request body.
-+    -- ex: translates /service-path/galaxy/ to /gateway-path/hub/ in service response bodies
-+    handle:logDebug("Running lua script to rewrite response body.")
-+    -- Ignore this script if the response is an upgrade response to prevent websockets from breaking
-+    local status_code = handle:headers():get(":status")
-+    if status_code == "101" then
-+        return
-+    end
-+
-+    -- Ignore this script if the response is from a StreamingHTTPResponse event-stream
-+    local ctype = handle:headers():get("content-type")
-+    if ctype and string.match(ctype, "text/event%-stream") then
-+        handle:headers():replace("X-Accel-Buffering", "no")
-+        return
-+    end
-+
-+    local location = handle:headers():get("Location")
-+
-+    -- If the location contains __gateway_no_rewrite__=1 (e.g. as a GET param),
-+    -- then do not rewrite the location header.
-+    if location and string.match(location, "__gateway_no_rewrite__=1") then
-+        return
-+    end
-+
-+    local prefix_rewrite = handle:metadata():get("prefix")
-+    local prefix = handle:metadata():get("prefix_rewrite")
-+
-+    if location then
-+        local new_location = string.gsub(location, prefix, prefix_rewrite)
-+        handle:headers():replace("Location", new_location)
-+    end
-+    local body = handle:body()
-+    if body then
-+        body_bytes = body:getBytes(0, body:length())
-+        local modified_body = string.gsub(body_bytes, prefix, prefix_rewrite)
-+
-+        local content_length = handle:body():setBytes(modified_body)
-+        handle:headers():replace("content-length", content_length)
-+    end
-+end
-+
-+function envoy_on_request(handle)
-+    -- Translate urls in the request body back to the service's base path.
-+    -- ex: translates /gateway-path/hub/ to /service-path/galaxy/ in service request bodies
-+    handle:logDebug("Running lua script to rewrite request body.")
-+
-+    -- Ignore this script if the request is an upgrade request to prevent websockets from breaking
-+    local upgrade_header = handle:headers():get("upgrade")
-+    if upgrade_header then
-+        return
-+    end
-+
-+    local prefix_rewrite = handle:metadata():get("prefix")
-+    local prefix = handle:metadata():get("prefix_rewrite")
-+
-+    local path = handle:headers():get(":path")
-+    if string.match(path, "=") then
-+        -- need to escape "-"
-+        local match = "%=" .. string.gsub(prefix_rewrite, "%-", "%%-")
-+        local replace = "%=" .. string.gsub(prefix, "%-", "%%-")
-+
-+        handle:logDebug(match)
-+        handle:logDebug(replace)
-+
-+        local new_path = string.gsub(path, match, replace)
-+
-+        -- if the query param is urlencoded, replace those instead
-+        new_path = string.gsub(new_path, string.gsub(match, "/", "%%%%2F"), string.gsub(replace, "/", "%%%%2F"))
-+
-+        handle:headers():replace(":path", new_path)
-+    end
-+
-+    local body = handle:body()
-+    if body then
-+        body_bytes = body:getBytes(0, body:length())
-+        local modified_body = string.gsub(body_bytes, prefix_rewrite, prefix)
-+
-+        local content_length = handle:body():setBytes(modified_body)
-+        handle:headers():replace("content-length", content_length)
-+    end
-+end
-diff --git a/roles/ansibleautomationplatform/templates/envoy.configmap.yaml.j2 b/roles/ansibleautomationplatform/templates/envoy.configmap.yaml.j2
-index f4c4344..f7d7662 100644
---- a/roles/ansibleautomationplatform/templates/envoy.configmap.yaml.j2
-+++ b/roles/ansibleautomationplatform/templates/envoy.configmap.yaml.j2
-@@ -78,3 +78,5 @@ data:
-         socket_address:
-           address: 0.0.0.0
-           port_value: 19000
-+  envoy-path-rewrite.lua: |
-+    {{ lookup('file', 'envoy-path-rewrite.lua') | indent(4) }}
+diff --git a/roles/ansibleautomationplatform/tasks/combine_defaults.yml b/roles/ansibleautomationplatform/tasks/combine_defaults.yml
+index 6a03128..706523f 100644
+--- a/roles/ansibleautomationplatform/tasks/combine_defaults.yml
++++ b/roles/ansibleautomationplatform/tasks/combine_defaults.yml
+@@ -12,7 +12,7 @@
+   ansible.builtin.set_fact:
+     _proxy_args: "{{ _proxy_args | default([]) + [item] }}"
+   loop:
+-    - '/usr/bin/envoy'
++    - 'envoy'
+     - '-c'
+     - '/etc/ansible-automation-platform/gateway/envoy.yaml'
+     - "{{ '--concurrency' if combined_proxy.concurrency is defined else '' }}"
 diff --git a/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2 b/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
-index b3ee7e4..0ffdd42 100644
+index 02fa82f..df02eeb 100644
 --- a/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
 +++ b/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
-@@ -135,7 +135,7 @@ spec:
-       - name: proxy
-         image: '{{ _image_proxy }}'
-         imagePullPolicy: '{{ image_pull_policy }}'
--        args: ['/usr/bin/envoy', '-c', '/etc/ansible-automation-platform/gateway/envoy.yaml']
-+        args: ['envoy', '-c', '/etc/ansible-automation-platform/gateway/envoy.yaml']
-         livenessProbe:
-           httpGet:
-             path: "/api/gateway/v1/ping/"
-@@ -149,6 +149,9 @@ spec:
-         - name: envoy-conf
-           mountPath: /etc/ansible-automation-platform/gateway/envoy.yaml
-           subPath: envoy.yaml
-+        - name: envoy-conf
-+          mountPath: /etc/ansible-automation-platform/gateway/envoy-path-rewrite.lua
-+          subPath: envoy-path-rewrite.lua
+@@ -134,6 +134,17 @@ spec:
  {% if combined_api.resource_requirements is defined %}
          resources: {{ combined_api.resource_requirements }}
  {% endif %}
++      - name: copy-envoy-path-rewrite-lua
++        image: '{{ _image }}'
++        imagePullPolicy: '{{ image_pull_policy }}'
++        command:
++          - /bin/sh
++          - -c
++          - cp /etc/ansible-automation-platform/gateway/envoy-path-rewrite.lua /var/lib/aap-envoy-lua/envoy-path-rewrite.lua
++        volumeMounts:
++        - name: envoy-lua
++          mountPath: /var/lib/aap-envoy-lua
++
+       containers:
+       - name: proxy
+         image: '{{ _image_proxy }}'
+@@ -156,6 +167,9 @@ spec:
+         - name: envoy-conf
+           mountPath: /etc/ansible-automation-platform/gateway/envoy.yaml
+           subPath: envoy.yaml
++        - name: envoy-lua
++          mountPath: /etc/ansible-automation-platform/gateway/envoy-path-rewrite.lua
++          subPath: envoy-path-rewrite.lua
+ {% if combined_proxy.resource_requirements is defined %}
+         resources: {{ combined_proxy.resource_requirements }}
+ {% endif %}
+@@ -264,6 +278,8 @@ spec:
+         - name: django-fallback-cache
+           mountPath: /var/cache/ansible-automation-platform/gateway
+       volumes:
++      - name: envoy-lua
++        emptyDir: {}
+ {% if bundle_ca_crt %}
+       - name: "ca-trust-extracted"
+         emptyDir: {}

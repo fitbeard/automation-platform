@@ -42,9 +42,9 @@ RUN mkdir -p /opt/aap_gateway && chgrp -R 0 /opt/aap_gateway && chmod -R g=u /op
 RUN /usr/bin/${PYTHON} -m venv /opt/aap_gateway/venv
 RUN echo "/opt/aap_gateway/aap_gateway" > /opt/aap_gateway/venv/lib/${PYTHON}/site-packages/project.pth
 
-# Upper bound <81 keeps pkg_resources
-# (removed in 81; gateway transitive deps still rely on it).
-RUN /opt/aap_gateway/venv/bin/pip install --upgrade 'setuptools>=78.1.1,<81'
+# Upper bound <81 keeps pkg_resources (removed in 81; gateway transitive deps
+# still rely on it) — a FUNCTIONAL bound, not a CVE floor.
+RUN /opt/aap_gateway/venv/bin/pip install --upgrade 'setuptools<81'
 
 COPY requirements/requirements.txt /tmp/requirements.txt
 COPY requirements/requirements_git.txt /tmp/requirements_git.txt
@@ -52,27 +52,25 @@ RUN /opt/aap_gateway/venv/bin/pip --no-cache-dir install -r /tmp/requirements.tx
 RUN /opt/aap_gateway/venv/bin/pip --no-cache-dir install -r /tmp/requirements_git.txt
 RUN /opt/aap_gateway/venv/bin/pip --no-cache-dir install colorama logutils
 
-# CVE bumps : force-upgrade past gateway
-# requirements.in resolved versions where transitive constraints left
-# vulnerable lower-bound versions in place. Tight upper bounds avoid major
-# jumps. Skipped: lxml 5.3->6.1 (major, SAML/XML risk), protobuf 5.29->6.33
-# (major, gRPC risk), wheel-vendored-inside-setuptools (false-positive).
-#   django   5.2.9  -> 5.2.13   CVE-2026-3902, -33034, -25673, -1287, -1207, -1312, -33033
-#   requests 2.32.3 -> 2.33.0   CVE-2024-47081, CVE-2026-25645
-#   sqlparse 0.5.3  -> 0.5.4    GHSA-27jp-wm6q-gp25
-#   cryptography 46.0.5 -> 46.0.7  CVE-2026-39892
-#   pip 23.2.1 -> 26.1+  CVE-2023-5752, -2025-8869, -2026-6357
-# social-auth-app-django CVE-2025-61783 (5.6.0 fix) is BLOCKED upstream:
-# DAB at our pin (5f6343b) hard-pins `social-auth-app-django==5.4.1` in
-# its [authentication]/[all] extras. Adding ">=5.6.0" here was silently
-# resolved to 5.4.1 by pip to satisfy DAB's `==` constraint. To clear
-# this CVE upstream, DAB needs to loosen the pin (or we'd need to fork).
+# CVE bumps — residual critical/high from `docker scout` on the clean
+# 2.6.20260824 build (reset 2026-09; the SRPM already carries cryptography
+# 48.0.0, certifi 2026.7.22, requests-current, so far fewer than before).
+#   django   5.2.9  -> 5.2.13  (5H: CVE-2026-3902/-33034/-1287/-1207/-33033 + more)
+#   sqlparse 0.5.3  -> 0.6.0   (3H: CVE-2026-71491/-54284 ReDoS-DoS, -59893)
+#   cryptography 48.0.0 -> 50.0.0 (3H: GHSA-537c OOB, CVE-2026-69249 DoS, -69247
+#     timing). Gateway's dep set does NOT cap cryptography <47 (unlike awx/eda's
+#     pyopenssl 26.0.0), so the full fix line resolves.
+#
+# NOT bumped (documented):
+#   lxml 5.3.0 -> 6.1.0 (major, SAML/XML risk), protobuf 5.29.5 -> 6.33.5
+#   (major, gRPC risk). setuptools 53.0.0/68.2.2, wheel 0.45.1, jaraco-context
+#   5.3.0 = RPM/bootstrap/build-tooling shadows (the aap_gateway venv ships
+#   fixed setuptools<81 etc). social-auth-app-django CVE-2025-61783 stays
+#   BLOCKED — DAB hard-pins ==5.4.1; a >= here silently resolves back to 5.4.1.
 RUN /opt/aap_gateway/venv/bin/pip install --no-cache-dir --upgrade \
     "django>=5.2.13,<6.0" \
-    "requests>=2.33.0,<3.0" \
-    "sqlparse>=0.5.4,<0.6" \
-    "cryptography>=46.0.7,<47" \
-    "pip>=26.1,<27.0"
+    "sqlparse>=0.6.0,<0.7" \
+    "cryptography>=50.0.0,<51"
 
 # Install the gateway package itself
 ARG VERSION

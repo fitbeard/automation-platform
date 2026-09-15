@@ -222,7 +222,7 @@ environment definitions. Most image builds support both `linux/amd64` and
 | --- | --- | --- |
 | `quay.io/fitbeard/automation-platform/awx` | `26.0.0` | `images/awx` |
 | `quay.io/fitbeard/automation-platform/awx-ee` | `26.0.0` | `images/awx-ee` |
-| `quay.io/fitbeard/automation-platform/gateway` | `2.6.20260422` | `images/gateway` |
+| `quay.io/fitbeard/automation-platform/gateway` | `2.6.20260824` | `images/gateway` |
 | `quay.io/fitbeard/automation-platform/eda-server` | `1.2.12` | `images/eda` |
 | `quay.io/fitbeard/automation-platform/eda-ui` | `2.6.13` | `images/eda` |
 | `quay.io/fitbeard/automation-platform/eda-de` | `26.0.0` | `images/eda-de` |
@@ -240,7 +240,7 @@ cd images/awx
 VERSION=26.0.0 ./build.sh --push
 
 cd ../gateway
-VERSION=2.6.20260422 ./build.sh --push
+VERSION=2.6.20260824 ./build.sh --push
 ```
 
 Execution environment images use `ansible-builder`:

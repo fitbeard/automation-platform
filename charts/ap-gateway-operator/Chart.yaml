@@ -15,7 +15,7 @@ description: |
   AnsibleAutomationPlatform CR.
 type: application
 version: 0.1.0
-appVersion: "2.6-709"
+appVersion: "2.6-1787258025"
 keywords:
   - aap
   - ansible-automation-platform

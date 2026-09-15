@@ -6,7 +6,7 @@
 # upstream Git repo. Source ships only inside source-bundle
 # OCI image:
 #
-#   registry.redhat.io/ansible-automation-platform/platform-operator-bundle:2.6-709-source
+#   registry.redhat.io/ansible-automation-platform/platform-operator-bundle:2.6-1787258025-source
 #
 # Step 1 (this script's first phase) pulls the bundle, locates the source
 # layer, and extracts the gateway-operator subtree into ./src/.
@@ -40,7 +40,7 @@ set -euo pipefail
 
 # --- Configuration -----------------------------------------------------------
 
-BUNDLE_IMAGE="${BUNDLE_IMAGE:-registry.redhat.io/ansible-automation-platform/platform-operator-bundle:2.6-709-source}"
+BUNDLE_IMAGE="${BUNDLE_IMAGE:-registry.redhat.io/ansible-automation-platform/platform-operator-bundle:2.6-1787258025-source}"
 REGISTRY_HOST="${BUNDLE_IMAGE%%/*}"   # login target, derived from the image path
 SUBPROJECT="${SUBPROJECT:-gateway-operator}"
 
@@ -65,7 +65,7 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-709}"
+VERSION="${VERSION:-2.6-1787258025}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/your-namespace/ap-gateway-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
