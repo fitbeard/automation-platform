@@ -65,7 +65,7 @@ ansible-galaxy collection install fitbeard.awx
 Or pin a release, for example:
 
 ```shell
-ansible-galaxy collection install fitbeard.awx:25.0.0
+ansible-galaxy collection install fitbeard.awx:26.0.0
 ```
 
 ## Requirements

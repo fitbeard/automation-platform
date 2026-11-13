@@ -39,14 +39,14 @@ subprocess-tee = ">=0.4.1"
 
 [[package]]
 name = "ansible-core"
-version = "2.19.10"
+version = "2.20.11"
 description = "Radically simple IT automation"
 optional = false
-python-versions = ">=3.11"
+python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "ansible_core-2.19.10-py3-none-any.whl", hash = "sha256:ed6399e42384f55886ba1c9947496beb81f6e6b9f15cd90b3013a78baf6649ab"},
-    {file = "ansible_core-2.19.10.tar.gz", hash = "sha256:afe0438d3acb402319baeb12a52465e69642e7497889a3a979cf390c6061a138"},
+    {file = "ansible_core-2.20.11-py3-none-any.whl", hash = "sha256:a136e1b04c705e44d14507058008206eac3bae9179fa8499c36b0048ef1a2b33"},
+    {file = "ansible_core-2.20.11.tar.gz", hash = "sha256:f1738b566514c36e4cc635d10e4d728555d55867a9bdbfed709f05aa6bab4d82"},
 ]
 
 [package.dependencies]
@@ -54,7 +54,7 @@ cryptography = "*"
 jinja2 = ">=3.1.0"
 packaging = "*"
 PyYAML = ">=5.1"
-resolvelib = ">=0.5.3,<2.0.0"
+resolvelib = ">=0.8.0,<2.0.0"
 
 [[package]]
 name = "ansible-lint"
@@ -1280,4 +1280,4 @@ dev = ["doc8", "flake8", "flake8-import-order", "rstcheck[sphinx]", "ruff", "sph
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "5d41cf0d97be719d97d991e9fcded20ad1644bfc89e852de5cb1651b7ed1ade4"
+content-hash = "481c47f676cc8691c86074bfa5185b8903eb018f722bf742e476479c6a9c7686"

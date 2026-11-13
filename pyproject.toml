@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "awx-without-k8s"
+name = "automation-platform"
 version = "0.1.0"
 description = ""
 authors = ["Tadas Sutkaitis <tadasas@gmail.com>"]
@@ -8,7 +8,7 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
-ansible-core = "<2.20.0"
+ansible-core = "<2.21.0"
 netaddr = "^1.3.0"
 jmespath = "^1.1.0"
 pre-commit = "^4.5.1"
