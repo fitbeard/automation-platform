@@ -33,7 +33,7 @@ awx_peers: []
 awx_peers_from_control_nodes: true
 
 ## AWX
-awx_image_tag: 25.0.0
+awx_image_tag: 26.0.0
 awx_image: awx
 awx_ee_image_tag: "{{ awx_image_tag }}"
 awx_ee_image: awx-ee
@@ -140,7 +140,7 @@ gateway_cluster_node_host_id: "{{ ansible_fqdn }}"
 
 gateway_hostname: "{{ undef(hint='You must specify a AP frontend address with protocol e.g. https://gateway.demo.io') }}"
 
-gateway_image_tag: 2.6.20260422
+gateway_image_tag: 2.6.20260824
 gateway_image: gateway
 gateway_image_registry: quay.io
 gateway_image_url: "{{ gateway_image_registry }}/fitbeard/automation-platform/{{ gateway_image }}:{{ gateway_image_tag }}"
@@ -272,9 +272,9 @@ eda_cluster_node_host_id: "{{ ansible_fqdn }}"
 
 eda_hostname: "{{ undef(hint='You must specify a AP frontend address with protocol e.g. https://eda.demo.io') }}"
 
-eda_server_image_tag: 1.2.8
+eda_server_image_tag: 1.2.12
 eda_server_image: eda-server
-eda_ui_image_tag: 2.6.8
+eda_ui_image_tag: 2.6.13
 eda_ui_image: eda-ui
 eda_image_registry: quay.io
 eda_server_image_url: "{{ eda_image_registry }}/fitbeard/automation-platform/{{ eda_server_image }}:{{ eda_server_image_tag }}"
