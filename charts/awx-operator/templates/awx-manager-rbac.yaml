@@ -32,7 +32,10 @@ rules:
     verbs: [get, list, create, delete, patch, update, watch]
   - apiGroups: [batch]
     resources: [cronjobs, jobs]
-    verbs: [get, list, create, patch, update, watch]
+    # 'delete' is required by the migration-Job resilience logic (upstream #2143):
+    # a terminally-failed migration Job is deleted and recreated because a Job's
+    # spec.template is immutable.
+    verbs: [get, list, create, delete, patch, update, watch]
   - apiGroups: [monitoring.coreos.com]
     resources: [servicemonitors]
     verbs: [get, create]
@@ -46,6 +49,12 @@ rules:
   - apiGroups: [""]
     resources: [pods/exec, pods/attach, pods/log]
     verbs: [create, get]
+  # The operator must itself hold 'create serviceaccounts/token' so RBAC
+  # escalation-prevention lets it grant the same verb in the per-instance Role
+  # (service_account.yaml.j2 / patch 0005 — TokenRequest for credential plugins).
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    verbs: [create]
   - apiGroups: [apps]
     resources: [replicasets]
     verbs: [get, create]

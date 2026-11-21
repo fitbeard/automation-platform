@@ -2,7 +2,7 @@
 #
 # Build AWX Operator container image from public upstream code.
 #
-# Reproduces what ships in platform-operator-bundle:2.6-1787258025-source,
+# Reproduces what ships in platform-operator-bundle:2.6-1794615097-source,
 # using only transparent, publicly-verifiable
 # operations:
 #
@@ -40,7 +40,7 @@ BASELINE_COMMIT="${BASELINE_COMMIT:-7ead166ca030c2bebdd1c3254d152c9a2be7ee4d}"
 
 # Upstream SHAs cherry-picked on top of the baseline. Applied in chronological
 # order. Picks 1-8 reproduce AAP 2.6-709; picks 9-15 advance to the
-# 2.6-1787258025 bundle.
+# 2.6-1787258025 bundle; picks 16-17 advance to the 2.6-1794615097 bundle.
 #
 # Skipped between picks (deliberate):
 #   bfc4d8e — Add CRD validation for postgres_image+image_version pairing (#2096)
@@ -54,6 +54,17 @@ BASELINE_COMMIT="${BASELINE_COMMIT:-7ead166ca030c2bebdd1c3254d152c9a2be7ee4d}"
 #   6ea736f — ci: bump Python from 3.8 to 3.11 (#2124)  (CI-only)
 #   f125405 — bump operator-sdk to v1.42.2 (#2121)  *** load-bearing skip — base image locked at v1.36.1 ***
 #   2d39b54 — sync Makefile + operator-sdk v1.42.3 (#2125)  *** load-bearing skip (same reason) ***
+# Skipped for the 1794615097 bundle (NOT present in the bundle's awx-operator;
+# the old→new bundle delta is only backup-finalizer + migration-resilience +
+# the downstream-only TokenRequest RBAC, patch 0005):
+#   79b861b — feat: runtime NetworkPolicies for AWX operand workloads (#2132)
+#   ac788df — Make receptor_log_level configurable for mesh ingress pods (#2118)
+#   140ecca/57c6e79/e3f2ca0 — metrics-utility NetworkPolicy follow-ups (#2152 etc.)
+#   2df75c4 — Update vendored operator_sdk.util collection to 0.5.0 (#2144)
+#   d7ca298 — fix: allow kube-system namespace in DNS egress (#2145)
+#   45363a1/d4d963f — docs/SECURITY.md (dev-only)
+#   5e0aab3 — Fix backup/restore management pod labels (#2156, post-bundle-cut)
+#   fc0c3c3 — chore: remove release staging/publishing workflows (#2159, CI-only)
 CHERRY_PICKS=(
     "eeed2b8ae5dd1956d2bf127c7c986fa53792553c"  # 2026-01-19 django: --no-imports (Django 5.2 compat)
     "f04ab1878cbbccd7bf0a959d50f29e89ce13b64b"  # 2026-01-23 web: python3.11 -> python3.12 mountPath
@@ -70,6 +81,8 @@ CHERRY_PICKS=(
     "dc1c80f2043816c4d4a4c3cecf79268a2afdb7d2"  # 2026-06-10 deprecate postgres_keep_pvc_after_upgrade in CRD (#2117)  [1787258025]
     "09fc035621d97218de625e54b4a0e306959b5ab9"  # 2026-06-23 allow skipping PostgreSQL backup/restore (#2120)  [1787258025]
     "1a5774df9c4ccc6a0d1c38f2df00ae87c08e6368"  # 2026-07-23 fix: augment NO_PROXY in proxy-env ConfigMap (#2128)  [1787258025]
+    "0a548a5731b8a41612498449de8c29338dcd8e0e"  # 2026-08-27 fix: preserve backup_dir on finalizer path for clean_backup_on_delete (#2135)  [1794615097]
+    "76470a4dbafcd62df6b42e44ee8953f6a3c0ebca"  # 2026-10-30 Make migration Jobs resilient across controller image upgrades (#2143)  [1794615097]
 )
 
 # --- Flags -------------------------------------------------------------------
@@ -91,8 +104,8 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-1787258025}"
-DEFAULT_AWX_VERSION="${DEFAULT_AWX_VERSION:-26.0.0}"
+VERSION="${VERSION:-2.6-1794615097}"
+DEFAULT_AWX_VERSION="${DEFAULT_AWX_VERSION:-26.1.0}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"

@@ -1,42 +1,20 @@
-From 1875c8d8dff56babdc487b1f217bff431df06543 Mon Sep 17 00:00:00 2001
+From ce39e0c9758316ded1fa6dd7f8440b4f668a56bd Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
-Date: Wed, 6 May 2026 16:21:08 +0300
+Date: Sat, 21 Nov 2026 14:18:01 +0200
 Subject: [PATCH] patch: EDA automation_server_url uses _controller_name + FQDN
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-Original: 'http://{{ ansible_operator_meta.name }}-controller-service'
-
-Two compounding problems:
-  1. Bare hostname (no namespace) — fragile cross-namespace.
-  2. Hardcodes service name as <aap-name>-controller-service, which only
-     resolves when controller CR is named '<aap-name>-controller'. If
-     spec.controller.name overrides the default (we use 'ap-controller'
-     against an AAP CR named 'aap'), awx-operator emits
-     <controller-name>-service = 'ap-controller-service', NOT
-     'aap-controller-service'. EDA -> controller calls then fail DNS.
-
-Fix: derive from _controller_name (set by combine_controller_defaults)
-with a fallback to <aap-name>-controller for the default-name case.
-Append namespace + svc.cluster.local for FQDN.
-
-  http://<_controller_name>-service.<namespace>.svc.cluster.local
-
-User can still override via spec.eda.automation_server_url (combine_eda
-merges spec.eda over _default_eda, so explicit wins).
-
-Mirrors the gateway-side fix in patch 0003 (controller_api_url 3-tier
-resolution) — same root cause, same FQDN-based service-name pattern.
+Re-authored for 2.6-1794615097. _default_eda.automation_server_url pointed at a
+bare '<name>-controller-service' which doesn't resolve for EDA activations in a
+different namespace; use the resolved controller name + in-cluster FQDN.
 ---
  roles/ansibleautomationplatform/vars/main.yml | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/roles/ansibleautomationplatform/vars/main.yml b/roles/ansibleautomationplatform/vars/main.yml
-index 32faf5b..393ab7e 100644
+index fd9b796..54eda55 100644
 --- a/roles/ansibleautomationplatform/vars/main.yml
 +++ b/roles/ansibleautomationplatform/vars/main.yml
-@@ -103,7 +103,7 @@ _default_eda:
+@@ -119,7 +119,7 @@ _default_eda:
    no_log: "{{ no_log }}"
    idle_deployment: false
    postgres_configuration_secret: "{{ eda_pg_config['resources'][0]['metadata']['name'] }}"

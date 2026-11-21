@@ -1,29 +1,22 @@
-From 1622623c0c46186dd86eacb2ac0e9ec546ca3228 Mon Sep 17 00:00:00 2001
+From 7784988df543e354243a1e31990646e9036c5969 Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
-Date: Wed, 6 May 2026 11:42:53 +0300
+Date: Sat, 21 Nov 2026 14:18:01 +0200
 Subject: [PATCH] patch: nginx static-asset paths -> match
  build-gateway/Dockerfile layout
 
-The bundle template assumes the downstream gateway image's path layout
-(/var/lib/ansible-automation-platform/platform/ui[/static]/) which
-matches the gateway container. Our image
-(quay.io/fitbeard/automation-platform/gateway:2.6.20260422, built via build-gateway/) lays
-the platform UI + collected static under /opt/aap_gateway/ instead:
-
-  - /var/lib/.../platform/ui/static/  ->  /opt/aap_gateway/static/
-  - /var/lib/.../platform/ui          ->  /opt/aap_gateway/platform_ui
-
-See build-gateway/Dockerfile lines 'COPY --from=ui-builder ... /opt/aap_gateway/platform_ui'
-and 'chown -R 1000 /opt/aap_gateway/static' for the source side.
+Re-authored for 2.6-1794615097. The vendor nginx.configmap serves the platform
+UI from /var/lib/ansible-automation-platform/platform/ui{,/static}; our gateway
+image ships it at /opt/aap_gateway/platform_ui (+ collectstatic at
+/opt/aap_gateway/static). Repoint the alias/root accordingly.
 ---
  .../templates/nginx.configmap.yaml.j2                       | 6 +++---
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2 b/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2
-index da308cd..2cf962f 100644
+index 115a91b..8b7808c 100644
 --- a/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2
 +++ b/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2
-@@ -71,7 +71,7 @@ data:
+@@ -73,7 +73,7 @@ data:
  
              # API Static files
              location ^~ /static/ {
@@ -31,8 +24,8 @@ index da308cd..2cf962f 100644
 +                alias /opt/aap_gateway/static/;
              }
  
-             # API endpoints
-@@ -100,14 +100,14 @@ data:
+             location = /healthz {
+@@ -144,14 +144,14 @@ data:
  
              # UI files
              location ~* \.(json|woff|woff2|jpe?g|png|gif|ico|svg|css|js)$ {

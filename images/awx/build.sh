@@ -12,8 +12,8 @@
 #   SRPM is public on the vendor FTP, Apache-2.0, %prep has ZERO %patchN or
 #   git apply directives — the tarball IS the complete source.
 #
-#   UI source (aap-ui) lives in a fundamentally private repo
-#   (ansible-automation-platform/aap-ui) — SRPM is mandatory there regardless.
+#   UI source (aap-ui) lives in a non-public vendor source tree
+#   (aap-ui) — SRPM is mandatory there regardless.
 #
 # Usage:
 #   ./build.sh                                     # Build for local platform
@@ -30,11 +30,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- SRPM sources (public FTP, Apache-2.0) -----------------------------------
 
-AWX_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-controller-4.7.16-1.el9ap.src.rpm"
+AWX_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-controller-4.7.20-1.el9ap.src.rpm"
 AWX_SRPM_DIR="${SCRIPT_DIR}/awx-srpm"
 AWX_TARBALL_GLOB="automation-controller-*.tar.gz"
 
-AAP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.13-1.el9ap.src.rpm"
+AAP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.16-1.el9ap.src.rpm"
 AAP_UI_SRPM_DIR="${SCRIPT_DIR}/aap-ui-srpm"
 AAP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
 
@@ -45,19 +45,23 @@ AWX_LOGOS_COMMIT="bae4e6cfd16f5e7b814ed873a2fef68b6d90a354"
 AWX_LOGOS_DIR="${AWX_LOGOS_DIR:-${SCRIPT_DIR}/awx-logos}"
 
 # DAB commit on public ansible/django-ansible-base — devel commit nearest the
-# AWX 4.7.16 SRPM cut date (2026-08-18, per spec %changelog). 829db2e was
-# committed 2026-08-18T10:27Z (same day); the next devel commit is 2026-08-31,
-# so this is the closest publicly-reachable point to the bundled DAB.
-# The 4.7.16 SRPM ships private stable-2.6 DAB `9dc9c92d0108` (was `6ce102398b0e`
-# in 4.7.11); we chase public devel-on-the-cut-date instead. AWX references no
-# new DAB symbols across these patch bumps, so the public-only chain resolves.
-DAB_COMMIT="829db2e38b3683c0205d5b38b3453f274af60c7a"
+# AAP 2.6.20261116 SRPM cut (controller 4.7.20 was cut 2026-11-09; the gateway/UI
+# SRPMs in the same wave are cut 2026-11-16). 4f7889a8 was committed
+# 2026-11-12T20:38Z ("[AAP-102150] Update python cryptography") — the closest
+# publicly-reachable devel point that spans the whole wave and matches the SRPM's
+# cryptography 46.0.7 bump. The 4.7.20 SRPM ships the vendored stable-2.6 DAB
+# `91ccee049049` (version 2.6.20261116, NOT on public github); we chase public
+# devel-on-the-cut-date instead, kept in parity across AWX/EDA/gateway for
+# JWT/resource-server interop. AWX references no new DAB symbols across these
+# patch bumps, so the public-only chain resolves.
+DAB_COMMIT="4f7889a86d6479217e81d99fc46dadd5ea763432"
 
 # --- Image configuration -----------------------------------------------------
 
-# Clean version scheme for the SRPM-based rebuild: 25.0.0 = controller 4.7.11,
-# 26.0.0 = controller 4.7.16 refresh.
-VERSION="${VERSION:-26.0.0}"
+# Clean version scheme for the SRPM-based rebuild, kept inside the AAP 2.6 line:
+# 25.0.0 = controller 4.7.11, 26.0.0 = controller 4.7.16, 26.1.0 = controller
+# 4.7.20 refresh (minor bump — still AAP 2.6, not a major).
+VERSION="${VERSION:-26.1.0}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 
@@ -66,10 +70,10 @@ AAP_UI_DIR="${AAP_UI_DIR:-${SCRIPT_DIR}/aap-ui}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="awx-multiarch"
 
-# DAB setuptools_scm pretend version. DAB commit 829db2e is dated 2026-08-18
+# DAB setuptools_scm pretend version. DAB commit 4f7889a8 is dated 2026-11-12
 # on public devel; we use the commit-date pseudo-version to keep it monotonic
 # with the SRPM cut date.
-DAB_PRETEND_VERSION="${DAB_PRETEND_VERSION:-2.6.20260818}"
+DAB_PRETEND_VERSION="${DAB_PRETEND_VERSION:-2.6.20261112}"
 
 # --- Pre-flight --------------------------------------------------------------
 
@@ -100,9 +104,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-echo "=== AWX Rebuild from AAP SRPM (controller 4.7.16) ==="
-echo "  SRPM:      automation-controller-4.7.16-1.el9ap.src.rpm"
-echo "  UI SRPM:   automation-platform-ui-2.6.13-1.el9ap.src.rpm"
+echo "=== AWX Rebuild from AAP SRPM (controller 4.7.20) ==="
+echo "  SRPM:      automation-controller-4.7.20-1.el9ap.src.rpm"
+echo "  UI SRPM:   automation-platform-ui-2.6.16-1.el9ap.src.rpm"
 echo "  Version:   ${VERSION}"
 echo "  Image:     ${IMAGE_NAME}:${IMAGE_TAG}"
 if [ "${PUSH}" = true ]; then
@@ -210,12 +214,14 @@ echo ""
 # -------------------------------------------------------------------
 # 5. CVE bumps on pinned deps.
 #
-#    RESET 2026-09: all prior per-dep overrides were removed first, then a
-#    clean 4.7.16 image was scanned with `docker scout cves`. The 4.7.16 SRPM
-#    already carries most fixes we used to force (dynaconf 3.2.13, cryptography
-#    46.0.7, aiohttp 3.14.3, pyasn1 0.6.4, jwcrypto 1.5.7, urllib3 2.7.0,
-#    pyjwt 2.13.0, ...). Upstream also ships its own pip/distlib patch, applied
-#    via `make patch_pip` in the Dockerfile.
+#    RESET 2026-11 (4.7.20 wave): all prior per-dep overrides were removed
+#    first, then a clean 4.7.20 image was scanned with `docker scout cves`.
+#    The 4.7.20 SRPM already carries every fix we used to force last wave —
+#    gitpython 3.2.1 (was sed 3.1.59), django 5.2.17 (was 5.2.13), sqlparse
+#    0.6.0, urllib3 2.8.0 (CVE-2026-97689/-97687, per %changelog), cryptography
+#    46.0.7, requests 2.32.3, pyjwt 2.15.1, setuptools 80.9.0. Upstream also
+#    ships its own pip/distlib patch, applied via `make patch_pip` in the
+#    Dockerfile.
 #
 #    The bumps below are ONLY the residual critical/high findings from that
 #    scan that (a) have a stable fix and (b) install as wheels (none are in
@@ -226,41 +232,61 @@ echo ""
 echo "=> Re-applying residual CVE bumps (post-scan)..."
 REQFILE="requirements/requirements.txt"
 
-# CRITICAL CVE-2026-78676 + 24×HIGH (OS/argument/code injection, path traversal,
-# info exposure): gitpython 3.1.42 → 3.1.59 (first release clearing all).
-sedi 's/^gitpython==3.1.42$/gitpython==3.1.59/' "$REQFILE"
+# HIGH×11: aiohttp 3.14.3 → 3.14.4 (CVE-2026-128124/-128126..128132, -123817,
+# -111064/-111066 — resource-consumption/ReDoS cluster). Patch bump; the
+# [speedups] extra is preserved. The aio stack is pip-compiled to exact pins, so
+# three transitive deps move together: aiohttp 3.14.4 needs yarl>=1.25.1, and
+# yarl 1.25.1 in turn needs propcache>=0.2.1. Co-bump yarl 1.17.2->1.25.1 (current
+# 1.x) and propcache 0.2.0->0.3.1 to avoid a ResolutionImpossible. (multidict
+# 6.0.5, frozenlist 1.8.0, aiosignal 1.4.0, aiohappyeyeballs 2.6.1 already
+# satisfy aiohttp 3.14.4's bounds.)
+sedi 's/^aiohttp\[speedups\]==3.14.3$/aiohttp[speedups]==3.14.4/' "$REQFILE"
+sedi 's/^yarl==1.17.2$/yarl==1.25.1/' "$REQFILE"
+sedi 's/^propcache==0.2.0$/propcache==0.3.1/' "$REQFILE"
 
-# HIGH×2: django 5.2.12 → 5.2.13 (CVE-2026-3902 auth-bypass, CVE-2026-33034 DoS)
-sedi 's/^django==5.2.12$/django==5.2.13/' "$REQFILE"
+# HIGH×4: pyasn1 0.6.4 → 0.6.5 (CVE-2026-119194..119197 algorithmic-complexity).
+sedi 's/^pyasn1==0.6.4$/pyasn1==0.6.5/' "$REQFILE"
 
-# cryptography 46.0.7: NOT bumpable — LEFT at upstream. Its 3 highs (GHSA-537c
-# OOB read fixed 48.0.1, CVE-2026-69249 DoS fixed 49.0.0, CVE-2026-69247 timing
-# fixed 50.0.0) all need >=48.0.1, but pyopenssl==26.0.0 hard-caps
-# cryptography<47 (and msal==1.35.1 caps <49). Any bump is ResolutionImpossible
-# without also bumping pyopenssl + msal — a cascading crypto/Azure-stack change
-# deferred (needs its own compat validation).
+# HIGH×3: msgpack 1.1.1 → 1.2.3 (GHSA-6v7p use-after-free, CVE-2026-57585, and
+# CVE-2026-114613 mem-leak fixed in 1.2.3). Still 1.1.1 in the 4.7.20 SRPM.
+sedi 's/^msgpack==1.1.1$/msgpack==1.2.3/' "$REQFILE"
 
-# HIGH×3: sqlparse 0.5.3 → 0.6.0 (CVE-2026-71491 / -54284 ReDoS-DoS, -59893).
-# Even 0.5.5 is affected (<=0.5.5); 0.6.0 is the fix line.
-sedi 's/^sqlparse==0.5.3$/sqlparse==0.6.0/' "$REQFILE"
-
-# HIGH×2: msgpack 1.1.1 → 1.2.1 (GHSA-6v7p use-after-free, CVE-2026-57585)
-sedi 's/^msgpack==1.1.1$/msgpack==1.2.1/' "$REQFILE"
-
-# HIGH: azure-core 1.30.0 → 1.38.0 (CVE-2026-21226 untrusted deserialization)
+# HIGH: azure-core 1.30.0 → 1.38.0 (CVE-2026-21226 untrusted deserialization).
+# Still 1.30.0 in the 4.7.20 SRPM.
 sedi 's/^azure-core==1.30.0$/azure-core==1.38.0/' "$REQFILE"
 
-# Deliberately NOT bumped (documented):
-#   - lxml 4.9.4 → 6.1.0 (CVE-2026-41066 XXE): SRC_ONLY (source-compiled) +
-#     major 4→6; SAML/XML processing regression risk. Deferred.
-#   - protobuf 4.25.8 → 5.29.6/6.33.5 (CVE-2026-0994): major 4→6; gRPC/operator
-#     wire-compat risk. Deferred.
-#   - twisted 24.7.0 (CVE-2026-42304 DoS): only fix is 26.4.0rc2 (pre-release).
-#   - setuptools 68.2.2 / wheel 0.45.1 / jaraco-context 5.3.0: system-RPM +
-#     build-tooling shadows only; the awx venv already ships setuptools 80.9.0,
-#     wheel 0.46.3, jaraco.context 4.3.0 (all fixed/unaffected). False positives.
-#   - go stdlib 1.26.5 (CVE-2026-39821 +5H): Rocky 9 base-image binaries;
-#     tracked by the Dockerfile `dnf -y update` when Rocky ships 1.26.6.
+# cryptography 46.0.7: NOT bumpable — LEFT at upstream. Its 3 highs (GHSA-537c
+# OOB read fix 48.0.1, CVE-2026-69249 DoS fix 49.0.0, CVE-2026-69247 timing fix
+# 50.0.0) all need >=48.0.1, but pyopenssl==26.0.0 hard-caps cryptography<47 (and
+# msal==1.35.1 caps <49). A bump is ResolutionImpossible without also bumping
+# pyopenssl + msal — a cascading crypto/Azure-stack change deferred.
+
+# Deliberately NOT bumped — residual critical/high, each with a reason (post-scan
+# 2026-11, docker scout cves --only-severity critical,high):
+#   - go stdlib 1.26.7 (2C+9H ×2 binaries, fix 1.26.9): vendor Go binaries
+#     (podman-remote, git-lfs) in the Rocky 9 base image; 1.26.9 is not yet in
+#     Rocky 9.8. Tracked by the Dockerfile `dnf -y update`. Not built by us.
+#   - certifi 2026.1.4 (1C GHSA-6q48 cert-validation): FALSE POSITIVE. This is
+#     the ansible/system-certifi shim — certifi.where() resolves to the OS trust
+#     store /etc/pki/tls/certs/ca-bundle.crt, NOT a bundled cacert.pem, so the
+#     compromised-root advisory does not apply; OS CA trust is kept current by
+#     `dnf -y update` (ca-certificates). scout only matches the version string.
+#   - djangorestframework 3.15.2 → 3.18.2 (3H data-amplification/DoS): AWX core
+#     framework hard-pins 3.15.2; 3.15→3.18 is a breaking jump. Deferred (API
+#     regression risk, needs its own validation).
+#   - twisted 24.7.0 (5H): every fix is a pre-release (26.4.0rc2 / 26.10.0rc1).
+#   - social-auth-core 4.5.4 → 5.0.0 (1H), oauthlib 3.2.2 → 4.0.0 (1H): major
+#     auth-stack bumps; DAB pins the social-auth chain. Deferred.
+#   - lxml 4.9.4 → 6.x (1H XXE): SRC_ONLY (source-compiled) + major; SAML/XML
+#     regression risk. Deferred.
+#   - protobuf 4.25.8 → 6.x (1H): major bump; gRPC/operator wire-compat risk.
+#   - vim 8.2.2637-43 (1H, fix -44): Rocky 9 base-image rpm; caught by `dnf -y
+#     update` once Rocky ships -44.
+#   - setuptools 68.2.2 (system RPM) / 70.3.0, wheel 0.45.1, jaraco-context 5.3.0
+#     (setuptools/_vendor), urllib3 1.26.20, msgpack 1.1.2: SHADOWS/false
+#     positives — the awx venv actually ships setuptools 80.9.0, wheel 0.46.3,
+#     jaraco.context 4.3.0, urllib3 2.8.0, msgpack 1.2.3 (the bumped runtime deps
+#     above). The flagged older copies are not on the awx import path.
 
 echo "   Patched $(grep -c '==' "$REQFILE") pinned packages"
 echo "   Done."

@@ -28,6 +28,18 @@ spec:
   extra_settings:
     - setting: EDA_ALLOW_LOCAL_RESOURCE_MANAGEMENT
       value: true
+    # STANDALONE (no AAP gateway): EDA defaults RESOURCE_SERVER.URL to
+    # https://localhost, which makes aap-eda restrict its REST auth to
+    # gateway-JWT-only (dropping Session + Basic auth). Without a gateway you
+    # can log in (session cookie is set) but every API call returns 403 — the
+    # session is never consulted. Clearing it restores Session + Basic auth so
+    # the UI/API work standalone. NOTE: the name MUST be the EDA_-prefixed env
+    # form — extra_settings entries are rendered as EDA_* configmap env vars,
+    # and only the env (not the settings file) overrides EDA's built-in
+    # RESOURCE_SERVER.URL default. Remove this when deploying behind the AAP
+    # gateway (which provides the JWT).
+    - setting: EDA_RESOURCE_SERVER__URL
+      value: ""
   # Single replica per component for kind/dev (default is 2). Drop these
   # blocks for production-sized deploys.
   api:
