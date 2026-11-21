@@ -10,7 +10,7 @@
 # Pinned versions (SRPM build dates in comments):
 #   - automation-gateway:     2.6.20260824-1 (SRPM cut 2026-08-14)
 #   - automation-platform-ui: 2.6.13-1      (same SRPM AWX/EDA use)
-#   - django-ansible-base:    829db2e38b36  (public devel nearest the 2026-08-14 cut; parity w/ AWX 4.7.16 + EDA 1.2.12; override via DAB_COMMIT=...)
+#   - django-ansible-base:    4f7889a86d64  (public devel nearest the 2026-11-09 cut; parity w/ AWX 4.7.20 + EDA 1.2.15; override via DAB_COMMIT=...)
 #   - python:                 3.12          (matches new gateway SRPM spec)
 #
 # Usage:
@@ -29,16 +29,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Pinned versions ---------------------------------------------------------
 
-GATEWAY_SRPM_URL="${GATEWAY_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-gateway-2.6.20260824-1.el9ap.src.rpm}"
+GATEWAY_SRPM_URL="${GATEWAY_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-gateway-2.6.20261116-1.el9ap.src.rpm}"
 GATEWAY_TARBALL_GLOB="aap-gateway-*.tar.gz"
 GATEWAY_SRPM_DIR="${GATEWAY_SRPM_DIR:-${SCRIPT_DIR}/gateway-srpm}"
 
-AAP_UI_SRPM_URL="${AAP_UI_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.13-1.el9ap.src.rpm}"
+AAP_UI_SRPM_URL="${AAP_UI_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.16-1.el9ap.src.rpm}"
 AAP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
 AAP_UI_SRPM_DIR="${AAP_UI_SRPM_DIR:-${SCRIPT_DIR}/aap-ui-srpm}"
 AAP_UI_DIR="${AAP_UI_DIR:-${SCRIPT_DIR}/aap-ui}"
 
-VERSION="${VERSION:-2.6.20260824}"
+VERSION="${VERSION:-2.6.20261116}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/gateway}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/gateway-src}"
@@ -47,10 +47,12 @@ BUILDER_NAME="gateway-multiarch"
 
 # Gateway sets EMAIL_ENFORCEMENT_VIA_SERIALIZER = True on its User model.
 # DAB's email-enforcement signals landed on devel 2026-05-06 (d5100f6), so at
-# our 829db2e pin (2026-08-18) DAB now reads this flag — consistent with
-# gateway's own _validate_email_change serializer + reverse-sync
-# GetOrCreateProcessor (both enforce the same policy). No behavior conflict.
-DAB_COMMIT="${DAB_COMMIT:-829db2e38b3683c0205d5b38b3453f274af60c7a}"
+# our 4f7889a8 pin (2026-11-12) DAB reads this flag — consistent with gateway's
+# own _validate_email_change serializer + reverse-sync GetOrCreateProcessor
+# (both enforce the same policy). No behavior conflict. 4f7889a8 is the public
+# devel commit nearest the 2.6.20261116 SRPM cut (2026-11-09), kept in parity
+# with the AWX 4.7.20 + EDA 1.2.15 refresh.
+DAB_COMMIT="${DAB_COMMIT:-4f7889a86d6479217e81d99fc46dadd5ea763432}"
 
 # --- Pre-flight --------------------------------------------------------------
 
@@ -566,18 +568,28 @@ sedi -E "s|images/Product_icon-[A-Za-z0-9_.-]+\.png|images/community-icon.svg|" 
     "${GW_API_TEMPLATE}"
 sedi -E 's|href="https://help\.[a-z]+\.com/"|href="https://docs.ansible.com/"|' \
     "${GW_API_TEMPLATE}"
+# Newer source moved the API-guide link to a vendor docs-site URL of the shape
+# https://docs.<host>.com/en/documentation/<product-slug>/<ver>/<page>. Repoint
+# it structurally (host + /en/documentation/ path shape, no vendor literal) so
+# the vendor product-slug (which the residual-branding guard below flags) is gone.
+sedi -E 's|href="https://docs\.[a-z]+\.com/en/documentation/[^"]*"|href="https://docs.ansible.com/"|' \
+    "${GW_API_TEMPLATE}"
 
-# 8.5c — remove the copyright footer block. Matched STRUCTURALLY on the
-# <div id="footer"> … </div> wrapper (3 nested divs), not on its text, so no
-# vendor literal appears here. Anchor-guarded.
+# 8.5c — remove the copyright footer block if present. Matched STRUCTURALLY on
+# the <div id="footer"> … </div> wrapper (3 nested divs), not on its text, so no
+# vendor literal appears here. The 2.6.20261116 source dropped the footer block
+# entirely (no copyright to strip), so its absence is fine — only the vendor
+# guard (8.5d) is authoritative about residual branding.
 python3 -c "
 import re
 f = '${GW_API_TEMPLATE}'
 content = open(f).read()
 pattern = re.compile(r'<div id=\"footer\">.*?</div>\s*</div>\s*</div>\n?', re.DOTALL)
-if not pattern.search(content):
-    raise SystemExit('DRF footer block (id=\"footer\") not found in api.html — upstream may have refactored')
-open(f, 'w').write(pattern.sub('', content))
+if pattern.search(content):
+    open(f, 'w').write(pattern.sub('', content))
+    print('   Removed DRF footer block.')
+else:
+    print('   No DRF footer block present (upstream dropped it) — nothing to strip.')
 "
 
 # 8.5d — fail loudly if any vendor token survives (needle built from the

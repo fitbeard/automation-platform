@@ -53,24 +53,32 @@ RUN /opt/aap_gateway/venv/bin/pip --no-cache-dir install -r /tmp/requirements_gi
 RUN /opt/aap_gateway/venv/bin/pip --no-cache-dir install colorama logutils
 
 # CVE bumps — residual critical/high from `docker scout` on the clean
-# 2.6.20260824 build (reset 2026-09; the SRPM already carries cryptography
-# 48.0.0, certifi 2026.7.22, requests-current, so far fewer than before).
-#   django   5.2.9  -> 5.2.13  (5H: CVE-2026-3902/-33034/-1287/-1207/-33033 + more)
-#   sqlparse 0.5.3  -> 0.6.0   (3H: CVE-2026-71491/-54284 ReDoS-DoS, -59893)
-#   cryptography 48.0.0 -> 50.0.0 (3H: GHSA-537c OOB, CVE-2026-69249 DoS, -69247
+# 2.6.20261116 build (reset 2026-11; the SRPM already carries sqlparse 0.6.0,
+# urllib3 2.8.0, requests 2.32.3, setuptools 78.1.1 — so last wave's sqlparse sed
+# is now baseline and dropped).
+#   django   5.2.9  -> 5.2.17 (5H: CVE-2026-3902/-33034/-1287/-1207/-33033 + more;
+#            5.2.17 = AWX 4.7.20 SRPM baseline, kept in parity)
+#   cryptography 48.0.0 -> 50.0.1 (3H: GHSA-537c OOB, CVE-2026-69249 DoS, -69247
 #     timing). Gateway's dep set does NOT cap cryptography <47 (unlike awx/eda's
 #     pyopenssl 26.0.0), so the full fix line resolves.
+#   protobuf 5.29.5 -> 5.29.6 (1H CVE-2026-0994 uncontrolled recursion). This is a
+#     PATCH within 5.29.x (not the 6.x major), so no gRPC/wire-compat risk — safe
+#     to take (unlike the deferred lxml 6.x major).
+#   certifi  2026.7.22 -> 2026.10.19 (1C GHSA-6q48-6c7w-9gw2 cert validation).
+#     Gateway ships a REAL bundled pip certifi (not the system-certifi shim), so
+#     the advisory applies — same as EDA.
 #
 # NOT bumped (documented):
-#   lxml 5.3.0 -> 6.1.0 (major, SAML/XML risk), protobuf 5.29.5 -> 6.33.5
-#   (major, gRPC risk). setuptools 53.0.0/68.2.2, wheel 0.45.1, jaraco-context
-#   5.3.0 = RPM/bootstrap/build-tooling shadows (the aap_gateway venv ships
-#   fixed setuptools<81 etc). social-auth-app-django CVE-2025-61783 stays
-#   BLOCKED — DAB hard-pins ==5.4.1; a >= here silently resolves back to 5.4.1.
+#   lxml 5.3.0 -> 6.x (major, SAML/XML XXE regression risk). Deferred.
+#   setuptools/wheel/jaraco-context = RPM/bootstrap/build-tooling shadows (the
+#   aap_gateway venv ships fixed setuptools<81 etc). social-auth-app-django
+#   CVE-2025-61783 stays BLOCKED — DAB hard-pins ==5.4.1; a >= here silently
+#   resolves back to 5.4.1.
 RUN /opt/aap_gateway/venv/bin/pip install --no-cache-dir --upgrade \
-    "django>=5.2.13,<6.0" \
-    "sqlparse>=0.6.0,<0.7" \
-    "cryptography>=50.0.0,<51"
+    "django>=5.2.17,<6.0" \
+    "cryptography>=50.0.1,<51" \
+    "protobuf>=5.29.6,<6.0" \
+    "certifi>=2026.10.19"
 
 # Install the gateway package itself
 ARG VERSION

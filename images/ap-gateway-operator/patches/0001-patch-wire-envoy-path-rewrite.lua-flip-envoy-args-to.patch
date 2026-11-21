@@ -1,28 +1,21 @@
-From d4e673b78fd6420ec3e3f26b21750561f6619a6a Mon Sep 17 00:00:00 2001
+From aff74f01c42ac58b255f7f67f07899d1950d4853 Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
-Date: Tue, 15 Sep 2026 16:32:22 +0300
+Date: Sat, 21 Nov 2026 14:16:17 +0200
 Subject: [PATCH] patch: flip envoy binary to PATH-relative + init-copy
  path-rewrite lua
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-The 2.6-1787258025 bundle productized the path-rewrite lua: the gateway image
-ships tools/scripts/envoy-path-rewrite.lua at GATEWAY_PATH_REWRITE_SCRIPT_FILE
-and the gateway xDS references it as a {filename} source_code. envoy loads that
-file from the PROXY container FS; RH assumes their maistra proxy image has it.
-We run STOCK docker.io/envoyproxy/envoy, so:
-  1. flip the proxy args '/usr/bin/envoy' -> 'envoy' in combine_defaults.yml
-     (_proxy_args loop; stock envoy is on PATH, not RH's /usr/bin/envoy), and
-  2. add an initContainer that runs the GATEWAY image and copies its baked lua
-     into a shared emptyDir, which the proxy container mounts at the
-     GATEWAY_PATH_REWRITE_SCRIPT_FILE path.
-No duplicated lua file and no envoy ConfigMap edit — the gateway image is the
-single source of the script (identical to what we used to embed).
+Stock envoy (docker.io/envoyproxy/envoy, _image_proxy) runs 'envoy' from PATH,
+not /usr/bin/envoy; and it needs the gateway's path-rewrite lua on its own FS.
+Re-authored for the 2.6-1794615097 bundle's gateway.deployment.yaml.j2:
+- combine_defaults.yml: _proxy_args '/usr/bin/envoy' -> 'envoy'
+- initContainer copy-envoy-path-rewrite-lua copies the lua baked in the gateway
+  {{ _image }} into a shared emptyDir (envoy-lua)
+- proxy container mounts envoy-lua at GATEWAY_PATH_REWRITE_SCRIPT_FILE path
+- envoy-lua emptyDir volume
 ---
- .../tasks/combine_defaults.yml                   |  2 +-
- .../templates/gateway.deployment.yaml.j2         | 16 ++++++++++++++++
- 2 files changed, 17 insertions(+), 1 deletion(-)
+ .../tasks/combine_defaults.yml                    |  2 +-
+ .../templates/gateway.deployment.yaml.j2          | 15 +++++++++++++++
+ 2 files changed, 16 insertions(+), 1 deletion(-)
 
 diff --git a/roles/ansibleautomationplatform/tasks/combine_defaults.yml b/roles/ansibleautomationplatform/tasks/combine_defaults.yml
 index 6a03128..706523f 100644
@@ -38,10 +31,10 @@ index 6a03128..706523f 100644
      - '/etc/ansible-automation-platform/gateway/envoy.yaml'
      - "{{ '--concurrency' if combined_proxy.concurrency is defined else '' }}"
 diff --git a/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2 b/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
-index 02fa82f..df02eeb 100644
+index a499d25..9ae8cc7 100644
 --- a/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
 +++ b/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
-@@ -134,6 +134,17 @@ spec:
+@@ -137,6 +137,16 @@ spec:
  {% if combined_api.resource_requirements is defined %}
          resources: {{ combined_api.resource_requirements }}
  {% endif %}
@@ -55,21 +48,20 @@ index 02fa82f..df02eeb 100644
 +        volumeMounts:
 +        - name: envoy-lua
 +          mountPath: /var/lib/aap-envoy-lua
-+
        containers:
        - name: proxy
          image: '{{ _image_proxy }}'
-@@ -156,6 +167,9 @@ spec:
+@@ -166,6 +176,9 @@ spec:
          - name: envoy-conf
            mountPath: /etc/ansible-automation-platform/gateway/envoy.yaml
            subPath: envoy.yaml
 +        - name: envoy-lua
 +          mountPath: /etc/ansible-automation-platform/gateway/envoy-path-rewrite.lua
 +          subPath: envoy-path-rewrite.lua
- {% if combined_proxy.resource_requirements is defined %}
-         resources: {{ combined_proxy.resource_requirements }}
- {% endif %}
-@@ -264,6 +278,8 @@ spec:
+ {% if gateway_tls_enabled | bool %}
+         - name: gateway-tls
+           mountPath: /etc/ansible-automation-platform/gateway/gateway.crt
+@@ -293,6 +306,8 @@ spec:
          - name: django-fallback-cache
            mountPath: /var/cache/ansible-automation-platform/gateway
        volumes:

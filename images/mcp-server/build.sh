@@ -22,7 +22,7 @@
 #
 # Env overrides:
 #   IMAGE_NAME=...        # default: quay.io/fitbeard/automation-platform/mcp-server
-#   MCP_SERVER_SHA=...    # default: 03876616... (public main HEAD)
+#   MCP_SERVER_SHA=...    # default: 1108adb... (newest SDK-v1 public main)
 #   DUMB_INIT_TAG=...     # default: v1.2.5
 #   IMAGE_TAG=...         # default: <short-sha>
 
@@ -34,26 +34,39 @@ DUMB_INIT_DIR="${SCRIPT_DIR}/deps/dumb-init"
 
 # --- Upstream pins ----------------------------------------------------------
 #
-# We ship 03876616 (2026-09-02 "Fix CVE-2026-84375: js-yaml 4.3.2", public
-# main HEAD at refresh time). Downstream tech-preview image
-# mcp-server-rhel9:2.6.20260824-1787228159 is built from PRIVATE commit
-# 97cf5c320f5e989b0967717083c1e966efc6539e (read from the image's own
-# `vcs-ref` / `org.opencontainers.image.revision` labels) — that SHA is NOT on
-# public github.com/ansible/aap-mcp-server, so RH now builds mcp-server from a
-# private branch (same reality as the controller SRPM). No public commit to pin
-# to; we track public main HEAD instead.
+# We ship 1108adb (2026-09-22 "Merge #197 AAP-88192 schedule CRUD tools") —
+# the last SDK-v1 commit on public main before the MCP SDK v1->v2 migration
+# merged (661dc63, 2026-09-25). The vendor's tech-preview runtime image
+# (tag 2.6.20260923-1789669036) is built from commit
+# a41e7d46b3396f6439ea32f3e330be9c7fa94e28 (read from the image's own
+# `vcs-ref`/`org.opencontainers.image.revision` labels; version 2.6.20260923) —
+# that commit is NOT on public github.com/ansible/aap-mcp-server. Confirmed from
+# the -source container's materialized build-wrapper tree: the vendored branch is
+# still on @modelcontextprotocol/sdk ^1.26.0 (SDK v1) + js-yaml 4.3.2, and has
+# DIVERGED from public main (it still carries session-era src/session.ts, which
+# public removed, and lacks public's src/oauth2/). So no public commit matches
+# the vendored tree exactly — same situation as the controller sources.
 #
-# Shipping public main HEAD is a security uplift over RH's ~2026-08-24 cut:
-# adds fast-uri CVE-2026-75899/-75931 (Aug 27), MCP_PORT k8s service-link
-# hardening AAP-90657 (Sep 2, relevant on k8s/kind), and js-yaml CVE-2026-84375
-# (Sep 2) — while including RH's Aug content (ip-address CVE-2026-54272,
-# fast-uri CVE-2026-16221, OpenAPI-spec sync Aug 21).
+# Pin policy (user decision, refresh wave 2): VENDOR-PARITY, not bleeding edge.
+# The vendored 2.6.20260923 build is still SDK v1 with no "skills" feature, so we
+# pin to the newest SDK-v1 public main commit (1108adb) rather than public HEAD
+# (174a0801+), which has already migrated to MCP SDK v2 + Express 5 + the
+# SEP-2640 skills extension — features the vendor has not shipped. Staying SDK v1
+# keeps behavioural parity with the vendored build while still taking every
+# pre-v2 security/functional fix.
 #
-# Prior pin was a9281de4 (2026-05-08). RH-pin identification method: read the
-# runtime image's vcs-ref label (no source-bundle fingerprinting needed now).
+# Uplift over our prior pin 03876616 (2026-09-02), all SDK v1:
+#   - fast-uri 3.1.7 (CVE-2026-84292, #192)
+#   - skip empty/null optional query params in buildToolUrl (AAP-90617, #190)
+#   - full schedule CRUD in the job_management toolset (AAP-88192, #197)
+# Dockerfile/tsconfig/node (>=22) unchanged vs 03876616 — builds as-is.
+#
+# Vendored-pin identification: read the runtime image's vcs-ref label. The
+# -source container additionally lets us confirm SDK major + divergence (done
+# above); for routine bumps the runtime label + /app diff is enough.
 
 MCP_SERVER_URL="https://github.com/ansible/aap-mcp-server"
-MCP_SERVER_SHA="${MCP_SERVER_SHA:-03876616275e34e779a539264341111088cc201a}"
+MCP_SERVER_SHA="${MCP_SERVER_SHA:-1108adb8309fb4da566285479a11c0b9f0f90469}"
 
 DUMB_INIT_URL="https://github.com/Yelp/dumb-init"
 DUMB_INIT_TAG="${DUMB_INIT_TAG:-v1.2.5}"

@@ -17,22 +17,50 @@ RUN microdnf module enable -y nodejs:22 \
     && microdnf clean all
 WORKDIR /app
 COPY src/package*.json src/tsconfig.json ./
-RUN npm ci
+# CVE overrides (critical/high reset, refresh wave 2) — extend upstream's own
+# `overrides` block (which already pins fast-uri/ip-address/@hono-node-server).
+# These are all patch-level bumps on express@5's transitive deps (express is
+# pulled in by @modelcontextprotocol/sdk). Regenerating the lock with these
+# applied is how upstream itself clears npm-audit findings:
+#   proxy-addr  2.0.7 -> 2.0.8  (CVE-2026-90711, auth-bypass-by-spoofing — the
+#               only CRITICAL in the image)
+#   body-parser 2.3.0 -> 2.4.0  (CVE-2026-111181)
+#   picomatch   4.0.3 -> 4.0.4  (CVE-2026-33671)
+# NOT overridden: zod 3.25.76 -> 4.6.6 (major, the MCP SDK pins zod@3) and
+# @modelcontextprotocol/sdk itself (4H fixed only in SDK v2 — we pin SDK v1 for
+# vendor parity this wave; the vendored build ships the same). Both deferred,
+# same as upstream and the vendored tree.
+RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));p.overrides={...(p.overrides||{}),'proxy-addr':'>=2.0.8','body-parser':'>=2.4.0'};fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+# npm install (not ci) regenerates package-lock.json with the overrides applied
+RUN npm install
 COPY src/src/ ./src/
-RUN npm install && npm run build
+RUN npm run build
+# Strip devDependencies so the node_modules we ship to the runtime stage is
+# production-only — the runtime image then needs no npm at all (npm's own CLI
+# deps pacote/sigstore/picomatch carried the only remaining npm highs).
+RUN npm prune --omit=dev
 
 FROM docker.io/rockylinux/rockylinux:9-minimal
 USER root
+# No `npm` in the runtime image — the app is started with `node dist/index.js`
+# and its production node_modules is copied from the builder, so the npm CLI
+# (and its vulnerable deps pacote/sigstore/picomatch) never ships. The trailing
+# `microdnf update` applies the latest Rocky 9 security errata to packages baked
+# into the base layer (curl 7.76.1-43 -> -44.el9_9.1 clears 14 highs; expat ->
+# -9.el9_9.8) — it must run AFTER install so pre-installed base packages upgrade.
 RUN microdnf module reset -y php nginx \
     && microdnf module enable -y nodejs:22 nginx:1.26 \
     && microdnf install --setopt=install_weak_deps=0 --nodocs -y \
     nodejs \
-    npm \
     ca-certificates \
     glibc-langpack-en \
     nginx \
     tzdata \
-    && microdnf clean all
+    && microdnf update --nodocs -y \
+    && microdnf clean all \
+    # The nodejs module bundles npm under /usr/lib/node_modules/npm; we never run
+    # npm at runtime, so drop it (removes its deps pacote/sigstore/picomatch).
+    && rm -rf /usr/lib/node_modules/npm /usr/bin/npm /usr/bin/npx
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh
@@ -42,9 +70,10 @@ RUN chown -R 1000:0 /var/lib/nginx /var/log/nginx
 
 WORKDIR /app
 COPY src/aap-mcp.sample.yaml /app/aap-mcp.yaml
-COPY src/package*.json ./
-RUN npm ci --only=production && npm cache clean --force
-
+# Production node_modules (dev-pruned, CVE-overrides applied) + dist + package.json
+# straight from the builder — no npm install at runtime.
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY src/data/ ./data/
 COPY --from=dumb_init_build /deps/dumb-init/dumb-init /usr/local/bin

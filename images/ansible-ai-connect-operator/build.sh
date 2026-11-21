@@ -4,14 +4,14 @@
 #
 # Reproduces the MCP server kind from platform-operator-bundle:2.6-1787258025,
 # scoped to MCP-only: the upstream `ansible/ansible-ai-connect-operator`
-# binary manages BOTH AnsibleAIConnect (chatbot/Lightspeed/Wisdom — RH/IBM
-# enterprise stack we skip) AND AnsibleMCPConnect (MCP server, standalone).
+# binary manages BOTH AnsibleAIConnect (chatbot/Lightspeed/Wisdom — the
+# vendor's enterprise stack we skip) AND AnsibleMCPConnect (MCP server, standalone).
 # We deploy the whole binary; only AnsibleMCPConnect CRs ever get applied,
 # so the chatbot/Lightspeed code paths never execute.
 #
 # REFRESH POLICY — MINIMAL (2026-09). Unlike awx/eda-operator, this operator's
 # downstream is NOT cleanly reconstructable from public commits: the bundle
-# stays on ansible-operator v1.36.1 + kube-rbac-proxy (private stable-2.6),
+# stays on ansible-operator v1.36.1 + kube-rbac-proxy (the vendored stable-2.6 line),
 # while public main took operator-sdk v1.40 (2026-03-03) → v1.42.3, removing
 # kube-rbac-proxy and restructuring config. Every new bundle feature (MCP
 # backup/restore, telemetry_hmac, installer_id, proxy-env) is layered on that
@@ -96,7 +96,7 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-1787258025}"
+VERSION="${VERSION:-2.6-1794615097}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/ansible-ai-connect-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"

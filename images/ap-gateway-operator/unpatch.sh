@@ -10,7 +10,7 @@
 # Gateway-operator has NO public upstream — the bundle IS the source. It
 # also assumes its sub-component CRs were ALSO downstreamified (e.g., it
 # expects to create `AutomationController` / `automationcontroller.ansible.com`
-# CRs, the renamed-by-RH form of upstream `AWX` / `awx.ansible.com`).
+# CRs, the vendor-renamed form of upstream `AWX` / `awx.ansible.com`).
 # Since our awx-operator stays upstream, we have to UNDO
 # downstreamify on the gateway-operator side.
 #

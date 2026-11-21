@@ -49,12 +49,35 @@ BASELINE_COMMIT="${BASELINE_COMMIT:-b72dbf05498050209cf1ba799af3f0bd2d896d61}"
 
 # Upstream SHAs cherry-picked on top of the baseline. Applied in chronological
 # order. Picks 1-7 reproduce AAP 2.6-709; picks 8-15 advance to the
-# 2.6-1787258025 bundle. Identified by replaying
-# baseline + picks and diffing (FQCN + EDA-kind + image-pin normalized) against
-# the bundle source.
+# 2.6-1787258025 bundle; picks 16-20 advance to the 2.6-1794615097 bundle.
+# Identified by replaying baseline + picks and diffing (FQCN + EDA-kind +
+# image-pin normalized) against the bundle source.
+#
+# Pod affinity (AAP-81880): the downstream implementation ships ONLY in the
+# unlicensed private operator source (eda-controller-rhel9-operator -source OCI,
+# branch 2.6-13, no LICENSE) — and the public commit #365 (2ed37328) is a stub
+# (molecule+watches only). Per the opensource-only rule we do NOT vendor the
+# private code. Instead we reproduce the capability ourselves in patch 0004 from
+# licensed/standard sources: the CRD field is the standard controller-gen
+# corev1.Affinity schema (Apache-2.0 k8s content, identical in every operator)
+# and the defaults/combine/deployment glue is our own authorship. So affinity IS
+# supported (api, ui, event_stream, default_worker, activation_worker, worker).
+# CRITICAL: patch 0004 also sets `snakeCaseParameters: False` on the EDA kind in
+# watches.yaml (the bundle does the same). Without it ansible-operator snake-cases
+# the CR spec, turning affinity.nodeAffinity into affinity.node_affinity; the
+# apiserver then prunes the unknown key and the pod ends up with affinity:{}.
+# The EDA CRD's own fields are already snake_case, so disabling the conversion
+# changes nothing else.
+# #374 (2d0c7b7, "Reconcile UI deployment placement") IS included (pick 18): it
+# removes stale placement fields (nodeSelector/tolerations/affinity/topology) from
+# the UI Deployment when cleared from the CR. It references combined_ui.affinity
+# with no default, which is why it needs patch 0004 (adds affinity:{} to the _ui
+# default so combined_ui.affinity is always defined) — the two are co-dependent.
+# Still SKIPPED:
+#   2ed37328 (#365) — affinity stub (molecule+watches only); nothing shippable.
 #
 # Skipped (deliberate). Base image stays ansible-operator v1.36.1 (confirmed in
-# BOTH bundles) — downstream never took the operator-sdk upgrades, same as us:
+# ALL bundles) — downstream never took the operator-sdk upgrades, same as us:
 #   b7e4168 — Merge operator-sdk-v1.40.0-upgrade (#323)  *** load-bearing skip ***
 #   bb19376 — bump operator-sdk to v1.42.2 (#356)         *** load-bearing skip ***
 #   80e750a — sync Makefile + operator-sdk v1.42.3 (#358) *** load-bearing skip ***
@@ -64,9 +87,15 @@ BASELINE_COMMIT="${BASELINE_COMMIT:-b72dbf05498050209cf1ba799af3f0bd2d896d61}"
 #   21c95bc/3cbbf9b/3415718/7bc9494/9a630ef — CI-only
 #   f8aab23 — revert proxy molecule test (test-only)
 #   746a39d — remove manager_auth_proxy_patch ref — bundle KEEPS it (kube-rbac-proxy present, base v1.36.1)
-#   460e160 — affinity parameter (#307) — NOT in bundle
-#   91c0a6f — finalizer playbook (#361) — NOT in bundle
+#   460e160 — affinity parameter (#307) — NOT in bundle (superseded by #81880, pick 18)
 #   (all merge commits skipped; underlying non-merge commits picked directly)
+# Skipped for the 1794615097 bundle (NOT in the new bundle's eda-server-operator;
+# verified by old→new bundle diff):
+#   a4646fc (#345 configurable activation namespace) + 8e81936 (its revert #345) — net round-trip
+#   fa60508 (#362 NetworkPolicies) + a95bbf5 (#369 DNS egress) — NetworkPolicy feature absent from bundle
+#   72fd559 (gate RESOURCE_SERVER on gateway presence) — not in bundle
+#   9608b6c (empty-string secret guards) — not in bundle
+#   c71580e — minikube docker runtime (dev-only)
 CHERRY_PICKS=(
     "4cd8202304a1904010f625892cc8d943e88dee86"  # 2026-02-03 create_backup_pvc option (#316)               [708]
     "6bf7694465ae8ea72fead93219c62387c50115f5"  # 2026-03-04 backup_pvc custom name in templates (#324)     [708]
@@ -83,6 +112,11 @@ CHERRY_PICKS=(
     "5680468d903a0150a1990bdc4cab68358526ec20"  # 2026-06-15 allow skipping PostgreSQL backup/restore        [1787258025]
     "1570553001e21d7e1e3ee3d27d27af171962e53f"  # 2026-07-23 fix: augment NO_PROXY in proxy-env ConfigMap (#359) [1787258025]
     "0416746d1c74010e02b9de4906913ba5b2ca795e"  # 2026-07-24 fix: remove chmod/chown from backup postgres task (#360) [1787258025]
+    "91c0a6f9f8aa"                                # 2026-07-27 fix: [AAP-84188] add a finalizer playbook to the EDA CR (#361) [1794615097]
+    "cd0d21188454"                               # 2026-08-27 fix: preserve backup_dir on finalizer path for clean_backup_on_delete (#363) [1794615097]
+    "2d0c7b7ec60e"                               # 2026-10-23 fix [AAP-92389]: reconcile removed UI placement fields (#374) [1794615097] — compatible via patch 0004 (combined_*.affinity defined)
+    "04cf0a850d1c"                               # 2026-10-27 fix(eda): qualify activation endpoints for separate namespaces (#375) [1794615097]
+    "9120da27dbd1"                               # 2026-11-03 fix: qualify activation database host for separate namespaces (#376) [1794615097]
 )
 
 # --- Flags -------------------------------------------------------------------
@@ -104,9 +138,9 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-1787258025}"
-DEFAULT_EDA_VERSION="${DEFAULT_EDA_VERSION:-1.2.12}"
-DEFAULT_EDA_UI_VERSION="${DEFAULT_EDA_UI_VERSION:-2.6.13}"
+VERSION="${VERSION:-2.6-1794615097}"
+DEFAULT_EDA_VERSION="${DEFAULT_EDA_VERSION:-1.2.15}"
+DEFAULT_EDA_UI_VERSION="${DEFAULT_EDA_UI_VERSION:-2.6.16}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-server-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
@@ -147,13 +181,14 @@ for sha in "${CHERRY_PICKS[@]}"; do
         # resolved to match the extracted bundle source exactly. Anything not
         # handled below aborts loudly (real drift, not silently resolved).
         unmerged="$(git diff --name-only --diff-filter=U)"
-        non_docs="$(printf '%s\n' "$unmerged" | grep -v '^docs/' || true)"
+        non_docs="$(printf '%s\n' "$unmerged" | grep -vE '^(docs/|molecule/)' || true)"
 
-        # docs/upgrade/*.md — NOT shipped in the image; take upstream.
-        docs_only="$(printf '%s\n' "$unmerged" | grep '^docs/' || true)"
-        if [ -n "$docs_only" ]; then
+        # docs/ and molecule/ — NOT shipped in the image (docs, test harness);
+        # take upstream on any conflict there.
+        not_shipped="$(printf '%s\n' "$unmerged" | grep -E '^(docs/|molecule/)' || true)"
+        if [ -n "$not_shipped" ]; then
             # shellcheck disable=SC2086
-            git checkout --theirs -- $docs_only && git add -- $docs_only
+            git checkout --theirs -- $not_shipped && git add -- $not_shipped
         fi
 
         case "$short" in
@@ -178,6 +213,35 @@ for sha in "${CHERRY_PICKS[@]}"; do
             # keys). Bundle has the added keys — take upstream for this file.
             f="roles/restore/defaults/main.yml"
             git checkout --theirs -- "$f" && git add -- "$f"
+            ;;
+        9120da27)
+            # #376 qualifies BOTH the activation DB host AND the event-persistence
+            # DB host for separate namespaces. Neither the bundle nor our tree ships
+            # event-streams/event-persistence (6a5cbe0/1812547 skipped), so the
+            # activation-db-host hunks apply cleanly while the event-persistence
+            # hunks conflict against our retained redis EDA_MQ_* block. Resolve
+            # every conflict to --ours (keep redis, drop the event-persistence
+            # additions); the cleanly-merged EDA_ACTIVATION_DB_* qualification is
+            # preserved. Result matches the bundle (redis kept, no event-persistence,
+            # activation host namespace-qualified).
+            for f in roles/eda/templates/eda-activation-worker.deployment.yaml.j2 \
+                     roles/eda/templates/eda-api.deployment.yaml.j2 \
+                     roles/postgres/tasks/set_event_persistence_secret.yml; do
+                perl -0pi -e 's/^<<<<<<< [^\n]*\n(.*?)^=======\n.*?^>>>>>>> [^\n]*\n/$1/gms' "$f"
+                grep -q '<<<<<<<\|>>>>>>>' "$f" && { echo "ERROR: unresolved markers remain in $f" >&2; git cherry-pick --abort; exit 1; }
+                git add -- "$f"
+            done
+            # take-ours above also dropped the {% endif %} that 9120da27 placed on
+            # its (event-persistence) side to close the activation-db-host {% if %}
+            # block right before the redis EDA_MQ_HOST env in eda-api. Exactly one
+            # such block loses its endif (verified: 1 occurrence). Re-insert it so
+            # the Jinja template stays balanced (else the eda-api deployment render
+            # fails at deploy_eda.yml "Apply Backend deployment resources").
+            api="roles/eda/templates/eda-api.deployment.yaml.j2"
+            perl -0pi -e 's/(\n              key: host\n)(        - name: EDA_MQ_HOST\n)/${1}{% endif %}\n${2}/' "$api"
+            ifc=$(grep -cE '\{%-? *if ' "$api"); endifc=$(grep -cE '\{%-? *endif' "$api")
+            [ "$ifc" = "$endifc" ] || { echo "ERROR: eda-api.deployment Jinja if/endif still unbalanced ($ifc/$endifc)" >&2; git cherry-pick --abort; exit 1; }
+            git add -- "$api"
             ;;
         *)
             if [ -n "$non_docs" ]; then

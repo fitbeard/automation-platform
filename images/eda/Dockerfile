@@ -77,28 +77,39 @@ RUN sed -i '/^django-ansible-base/,/^\]/d' pyproject.toml && \
 # Install runtime tools
 RUN pip install --no-cache-dir gunicorn daphne
 
-# CVE bumps — residual critical/high from `docker scout` on the clean 1.2.12
-# build (reset 2026-09). 1.2.12's poetry.lock still resolves vulnerable
-# transitives, so these force-upgrade past it. Each clears its finding with a
-# stable, wheel-installable fix.
-#   django   5.2.9  -> 5.2.13  (5H: CVE-2026-1287/-1207 SQLi, -3902 auth-bypass, -33034 DoS, +1)
-#   sqlparse 0.5.3  -> 0.6.0   (3H: CVE-2026-71491/-54284 ReDoS-DoS, -59893)
-#   azure-core 1.34.0 -> 1.38.0 (1H: CVE-2026-21226 untrusted deserialization)
-#   click    8.1.3  -> 8.3.3   (1H)
+# CVE bumps — residual critical/high from `docker scout` on the clean 1.2.15
+# build (reset 2026-11). 1.2.15's poetry.lock already carries sqlparse 0.6.0 and
+# azure-core 1.41.0 (last wave's seds for those now no-op → dropped). These
+# force-upgrade the transitives still pinned vulnerable in the lock. Each clears
+# its finding with a stable, wheel-installable fix.
+#   django   5.2.9  -> 5.2.17 (5H: CVE-2026-1287/-1207 SQLi, -3902 auth-bypass,
+#            -33034 DoS, +1; 5.2.17 = AWX 4.7.20 SRPM baseline, kept in parity)
+#   click    8.1.3  -> 8.3.3  (1H)
+#   requests 2.31.0 -> 2.32.4 (2H: CVE-2024-35195 cert-verify reuse, CVE-2024-47081
+#            .netrc credential leak)
+#   jinja2   3.1.3  -> 3.1.6  (3H: CVE-2024-56201/-56326 sandbox escape,
+#            CVE-2025-27516 |attr sandbox bypass)
+#   certifi  2023.07.22 -> 2026.10.19 (1C GHSA-6q48-6c7w-9gw2 improper cert
+#            validation / compromised root). Unlike AWX (system-certifi shim ->
+#            OS trust store), EDA ships a REAL bundled certifi/cacert.pem in the
+#            venv, so the advisory genuinely applies here. Fix line = 2026.10.19.
 #
-# NOT bumped (documented):
+# NOT bumped (documented, confirmed by post-build scout):
 #   cryptography 46.0.7 (3H: GHSA-537c/CVE-2026-69249/-69247) — pyOpenSSL 26.0.0
 #     hard-caps cryptography>=46.0.0,<47; fixes need >=48.0.1. Deferred (needs a
-#     pyopenssl stack bump). Same block as the AWX 4.7.16 refresh.
-#   twisted 24.7.0 (1H: CVE-2026-42304) — only fix is 26.4.0rc2 (pre-release).
+#     pyopenssl stack bump). Same block as the AWX 4.7.20 refresh.
+#   twisted 24.7.0 (5H) — fixes are pre-releases only.
 #   ecdsa 0.18.0 (1H: CVE-2024-23342 Minerva timing) — no upstream fix exists.
+#   oauthlib 3.2.2 (1H: CVE-2026-118669) — fix is 4.0.0 (major); deferred.
+#   vim (1H) — Rocky 9 base-image rpm; caught by `dnf -y update` once -44 ships.
 #   black/httpie (were 1C+2H) — dev/lint/test-group deps, now excluded from the
 #     image via `poetry install --without test,lint,dev` above (not shipped).
 RUN pip install --no-cache-dir --upgrade \
-    "django>=5.2.13,<6.0" \
-    "sqlparse>=0.6.0,<0.7" \
-    "azure-core>=1.38.0,<2.0" \
-    "click>=8.3.3,<9.0"
+    "django>=5.2.17,<6.0" \
+    "click>=8.3.3,<9.0" \
+    "requests>=2.32.4,<3.0" \
+    "jinja2>=3.1.6,<4.0" \
+    "certifi>=2026.10.19"
 
 # Copy full source and install the EDA package itself
 COPY . $SOURCES_DIR/
