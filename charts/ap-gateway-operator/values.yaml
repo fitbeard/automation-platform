@@ -6,7 +6,7 @@ replicaCount: 1
 # -- Operator container image
 image:
   repository: quay.io/your-namespace/ap-gateway-operator
-  tag: 2.6-1794615097
+  tag: 2.7-1794591068.0
   pullPolicy: IfNotPresent
 
 # -- Pull secrets for private registries hosting the operator/gateway/envoy/postgres/redis images
