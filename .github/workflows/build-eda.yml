@@ -32,8 +32,16 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
+      - name: Authenticate with source registry
+        uses: docker/login-action@v4.8.0
+        with:
+          registry: registry.redhat.io
+          username: ${{ secrets.VENDOR_ID }}
+          password: ${{ secrets.VENDOR_SECRET }}
+
       - name: Build images
         run: |
           cd images/eda && \
           chmod +x build.sh && \
+          chmod + extract-source-oci.sh && \
           VERSION=${{ github.event.inputs.tag }} UI_VERSION=${{ github.event.inputs.ui-tag }} ./build.sh --no-cache --push
