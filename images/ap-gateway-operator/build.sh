@@ -80,7 +80,7 @@ for arg in "$@"; do
 done
 
 VERSION="${VERSION:-2.7-1794591068.0}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/ap-gateway-operator}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/your-namespace/ap-gateway-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="aap-operators-multiarch"
