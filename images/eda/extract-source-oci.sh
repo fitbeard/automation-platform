@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # extract-source-oci.sh — pull a materialized source tree out of a vendor BSI
-# "-source" OCI image (the replacement for the public SRPM, which no
+# "-source" OCI image (replacement for the public SRPM, which no
 # longer exists).
 #
 # A "-source" image is a build-source-image (BSI) container: OCI-layout, no
@@ -87,7 +87,12 @@ assert_submodule_license() {
     local root="$1"; shift
     local sub lic hit
     for sub in "$@"; do
-        lic=$(find "$root/$sub" -maxdepth 1 \( -iname 'LICENSE*' -o -iname 'COPYING*' \) 2>/dev/null | head -1)
+        # -type f: match a LICENSE/COPYING *file* only. Some downstream trees
+        # (e.g. the controller's sources/tower) also carry a `licenses/` DIRECTORY
+        # of per-dependency license texts next to the project's own LICENSE.md —
+        # without -type f the dir name matches 'LICENSE*' and grep on it finds no
+        # license, a false failure.
+        lic=$(find "$root/$sub" -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'COPYING*' \) 2>/dev/null | head -1)
         if [ -z "$lic" ]; then
             echo "LICENSE GATE FAIL: no LICENSE/COPYING at root of submodule '$sub'" >&2
             echo "  ($root/$sub) — refusing to build a DISTRIBUTABLE image from an" >&2
