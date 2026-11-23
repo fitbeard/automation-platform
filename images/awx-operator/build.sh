@@ -2,31 +2,38 @@
 #
 # Build AWX Operator container image from public upstream code.
 #
-# Reproduces what ships in platform-operator-bundle:2.6-1794615097-source,
-# using only transparent, publicly-verifiable
-# operations:
+# The controller operator ships as public ansible/awx-operator +
+# downstreamify.sh (the AWX→AutomationController rename, which we deliberately
+# do NOT apply — our operator stays upstream-pure and reconciles AWX CRs; the
+# gateway operator's unpatch.sh handles the rename for the AAP-CR cascade).
+# So we build straight from public upstream:
 #
 #   1. git clone https://github.com/ansible/awx-operator
-#   2. git checkout 7ead166ca030c2bebdd1c3254d152c9a2be7ee4d   (baseline)
-#   3. git cherry-pick public upstream SHAs that carried on top
-#      (see CHERRY_PICKS below)
-#   4. docker build
+#   2. git checkout <devel-HEAD>                      (baseline, see below)
+#   3. (no cherry-picks — the 2.7 baseline already contains all of them)
+#   4. apply our local patches (patches/) + pin the base image
+#   5. docker build
 #
-# No binary blobs, no patch files, no cached state — every run wipes src/
-# and re-does the clone + cherry-picks from scratch. Fully deterministic
-# against upstream github.com/ansible/awx-operator.
+# 2.7 baseline move: we jump from the 2.6 baseline 7ead166c (operator-sdk
+# v1.36.1) to the current devel HEAD, which is already on operator-sdk v1.42.x
+# with kube-rbac-proxy removed (commit 5fb6bb7) — the v1.40+ upgrade that the
+# 2.6 build deliberately skipped (the v1.36.1 lock is lifted for 2.7). Base
+# image = **v1.42.3** (the devel-HEAD Dockerfile's native base: ubi-minimal +
+# microdnf, newest operator-sdk, no Dockerfile adaptation). We considered the
+# 2.7 downstream's declared v1.40.0 but it is full-ubi/dnf and would need a
+# microdnf->dnf swap — v1.42.3 is cleaner and newer.
 #
 # Usage:
 #   ./build.sh                          # Local build for host arch
 #   ./build.sh --push                   # Multi-arch push to registry
 #   ./build.sh --platform linux/arm64   # Single-arch local build
-#   ./build.sh --prep-only              # Clone + cherry-pick, skip docker
+#   ./build.sh --prep-only              # Clone + patch, skip docker
 #   ./build.sh --no-cache               # Force docker rebuild from scratch
 #
 # Env overrides:
 #   IMAGE_NAME=...       # default: quay.io/fitbeard/automation-platform/awx-operator
-#   IMAGE_TAG=...        # default: 2.6-709
-#   BASELINE_COMMIT=...  # default: 7ead166c...
+#   BASELINE_COMMIT=...  # default: devel HEAD pin below
+#   BASE_IMAGE_TAG=...   # default: v1.40.0 (ansible-operator base image)
 
 set -euo pipefail
 
@@ -36,54 +43,27 @@ SRC_DIR="${SCRIPT_DIR}/src"
 # --- Upstream pin ------------------------------------------------------------
 
 UPSTREAM_URL="https://github.com/ansible/awx-operator"
-BASELINE_COMMIT="${BASELINE_COMMIT:-7ead166ca030c2bebdd1c3254d152c9a2be7ee4d}"
+# devel HEAD at the cut (2026-11-19, "[AAP-95285] use
+# operator_sdk.util.k8s_event for failure events" #2146). Contains the full
+# v1.40+ migration (5fb6bb7) + all 17 commits the 2.6 build cherry-picked +
+# the NetworkPolicy/metrics-utility/backup-label fixes 2.6 skipped (all are
+# in the 2.7 era). Bump this pin as upstream advances.
+BASELINE_COMMIT="${BASELINE_COMMIT:-023470e}"
 
-# Upstream SHAs cherry-picked on top of the baseline. Applied in chronological
-# order. Picks 1-8 reproduce AAP 2.6-709; picks 9-15 advance to the
-# 2.6-1787258025 bundle; picks 16-17 advance to the 2.6-1794615097 bundle.
-#
-# Skipped between picks (deliberate):
-#   bfc4d8e — Add CRD validation for postgres_image+image_version pairing (#2096)
-#   fcf9a08 — Remove OperatorHub automation/documentation
-#   f9c05a5 — ci: Update DOCKER_API_VERSION to 1.44 (#2102)
-#   c996c88 — Fix config/testing overlay to use new metrics patch
-#   5fb6bb7 — Upgrade operator-sdk to v1.40.0 and remove kube-rbac-proxy  *** load-bearing skip ***
-#   a47b06f — devel: Update development guide
-#   605b46d — Collect logs with greater determination (#2087)
-#   9c3f521 — Standardize dev workflow with Makefile includes + docs (#2111)  (dev-only)
-#   6ea736f — ci: bump Python from 3.8 to 3.11 (#2124)  (CI-only)
-#   f125405 — bump operator-sdk to v1.42.2 (#2121)  *** load-bearing skip — base image locked at v1.36.1 ***
-#   2d39b54 — sync Makefile + operator-sdk v1.42.3 (#2125)  *** load-bearing skip (same reason) ***
-# Skipped for the 1794615097 bundle (NOT present in the bundle's awx-operator;
-# the old→new bundle delta is only backup-finalizer + migration-resilience +
-# the downstream-only TokenRequest RBAC, patch 0005):
-#   79b861b — feat: runtime NetworkPolicies for AWX operand workloads (#2132)
-#   ac788df — Make receptor_log_level configurable for mesh ingress pods (#2118)
-#   140ecca/57c6e79/e3f2ca0 — metrics-utility NetworkPolicy follow-ups (#2152 etc.)
-#   2df75c4 — Update vendored operator_sdk.util collection to 0.5.0 (#2144)
-#   d7ca298 — fix: allow kube-system namespace in DNS egress (#2145)
-#   45363a1/d4d963f — docs/SECURITY.md (dev-only)
-#   5e0aab3 — Fix backup/restore management pod labels (#2156, post-bundle-cut)
-#   fc0c3c3 — chore: remove release staging/publishing workflows (#2159, CI-only)
-CHERRY_PICKS=(
-    "eeed2b8ae5dd1956d2bf127c7c986fa53792553c"  # 2026-01-19 django: --no-imports (Django 5.2 compat)
-    "f04ab1878cbbccd7bf0a959d50f29e89ce13b64b"  # 2026-01-23 web: python3.11 -> python3.12 mountPath
-    "e0ce3ef71d5f76d1a5a1ecb12721f2484f10b16a"  # 2026-02-17 [AAP-64061] nginx log markers (#2100)
-    "d4b295e8b4bb4a9233275edf576ea76e85bc2bc7"  # 2026-02-24 create_backup_pvc option (#2097)
-    "0b4b5dd7fdabc221ce70fcb1228ab5bb2bd6b90e"  # 2026-02-27 AWXRestore force_drop_db
-    "56f10cf9666a37ec385192176214a4f48e44127e"  # 2026-03-05 Fix custom backup_pvc name (#2105)
-    "5697feea5705c45909b67acbd8539955963a4bd5"  # 2026-03-23 Fix unquoted timestamps in event templates (#2110)  [709]
-    "60fc7d856c553fd16e91a06fdc5cee66798b2aa3"  # 2026-03-24 Add use_db_compression option (#2106)              [709]
-    "7745848ba59fe91b6cf0eb6724ebe216f485c5af"  # 2026-04-29 feat: proxy env var support for AWX containers (#2113)  [1787258025]
-    "b333026226d98cc8637d94e69842c2f3a30ae80f"  # 2026-05-06 refactor: proxy env vars -> ConfigMap-only, drop CRD fields (#2114)  [1787258025]
-    "cdc592167f5a3551d47c68201c65abeb3d863d35"  # 2026-05-26 web: fix supervisord liveness config filename (#2116)  [1787258025]
-    "afad0c1a105b6795bc39808e63c505050b8af2b1"  # 2026-06-02 fix: Ansible defaults for CRD-only vars (#2119)  [1787258025]
-    "dc1c80f2043816c4d4a4c3cecf79268a2afdb7d2"  # 2026-06-10 deprecate postgres_keep_pvc_after_upgrade in CRD (#2117)  [1787258025]
-    "09fc035621d97218de625e54b4a0e306959b5ab9"  # 2026-06-23 allow skipping PostgreSQL backup/restore (#2120)  [1787258025]
-    "1a5774df9c4ccc6a0d1c38f2df00ae87c08e6368"  # 2026-07-23 fix: augment NO_PROXY in proxy-env ConfigMap (#2128)  [1787258025]
-    "0a548a5731b8a41612498449de8c29338dcd8e0e"  # 2026-08-27 fix: preserve backup_dir on finalizer path for clean_backup_on_delete (#2135)  [1794615097]
-    "76470a4dbafcd62df6b42e44ee8953f6a3c0ebca"  # 2026-10-30 Make migration Jobs resilient across controller image upgrades (#2143)  [1794615097]
-)
+# ansible-operator base image pinned into the upstream Dockerfile's FROM.
+# v1.42.3 is the native base for the devel-HEAD Dockerfile (ubi-minimal +
+# microdnf + the `microdnf install openssl` step) — the newest operator-sdk and
+# no Dockerfile adaptation needed. (v1.40.0, the 2.7 downstream controller-op's
+# declared base, is full ubi with dnf/openssl and would need a microdnf->dnf
+# swap — handled below if ever pinned, but v1.42.3 is cleaner, so we use it.)
+BASE_IMAGE_TAG="${BASE_IMAGE_TAG:-v1.42.3}"
+
+# No cherry-picks for 2.7. The 2.6 build carried 17 picks on top of the old
+# v1.36.1 baseline (7ead166c); ALL 17 are ancestors of the 2.7 devel-HEAD
+# baseline above, as are the NetworkPolicy/metrics-utility/receptor/backup-label
+# commits 2.6 deliberately skipped (they belong to the 2.7 era). So the baseline
+# jump subsumes the entire pick list — nothing to re-apply.
+CHERRY_PICKS=()
 
 # --- Flags -------------------------------------------------------------------
 
@@ -104,8 +84,8 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-1794615097}"
-DEFAULT_AWX_VERSION="${DEFAULT_AWX_VERSION:-26.1.0}"
+VERSION="${VERSION:-2.7-1794591068.0}"
+DEFAULT_AWX_VERSION="${DEFAULT_AWX_VERSION:-27.0.0}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
@@ -135,13 +115,28 @@ git config user.name  "AAP Rebuild"
 echo "==> Checking out baseline ${BASELINE_COMMIT}"
 git checkout --quiet "$BASELINE_COMMIT"
 
-echo "==> Applying ${#CHERRY_PICKS[@]} upstream cherry-picks:"
-for sha in "${CHERRY_PICKS[@]}"; do
+echo "==> Applying ${#CHERRY_PICKS[@]} upstream cherry-picks"
+for sha in ${CHERRY_PICKS[@]+"${CHERRY_PICKS[@]}"}; do
     short="$(git rev-parse --short=8 "$sha")"
     subject="$(git log --format='%s' -n 1 "$sha")"
     echo "    $short  $subject"
     git cherry-pick --allow-empty --keep-redundant-commits --quiet "$sha"
 done
+
+# Pin the ansible-operator base image to the user-chosen tag (upstream HEAD
+# defaults to v1.42.3; the 2.7 downstream controller-operator runs on v1.40.0).
+# The two bases differ: v1.42.3 is ubi-minimal (microdnf, no openssl — hence the
+# upstream `microdnf install openssl` step); v1.40.0 is full ubi (dnf, openssl
+# already present). So when pinning a dnf-based tag we also swap the Dockerfile's
+# `microdnf` calls to `dnf` (which exists there), keeping the security-update +
+# openssl intent without failing on the missing microdnf.
+echo "==> Pinning base image: ansible-operator:${BASE_IMAGE_TAG}"
+sedi() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
+sedi -E "s|(operator-framework/ansible-operator):v[0-9]+\.[0-9]+\.[0-9]+|\1:${BASE_IMAGE_TAG}|" "${SRC_DIR}/Dockerfile"
+if [[ "${BASE_IMAGE_TAG}" == "v1.40.0" ]]; then
+    sedi 's/microdnf/dnf/g' "${SRC_DIR}/Dockerfile"
+fi
+grep -m1 '^FROM' "${SRC_DIR}/Dockerfile" | sed 's/^/    /'
 
 cd "$SCRIPT_DIR"
 

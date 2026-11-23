@@ -17,19 +17,15 @@ RUN microdnf module enable -y nodejs:22 \
     && microdnf clean all
 WORKDIR /app
 COPY src/package*.json src/tsconfig.json ./
-# CVE overrides (critical/high reset, refresh wave 2) — extend upstream's own
-# `overrides` block (which already pins fast-uri/ip-address/@hono-node-server).
-# These are all patch-level bumps on express@5's transitive deps (express is
-# pulled in by @modelcontextprotocol/sdk). Regenerating the lock with these
-# applied is how upstream itself clears npm-audit findings:
-#   proxy-addr  2.0.7 -> 2.0.8  (CVE-2026-90711, auth-bypass-by-spoofing — the
-#               only CRITICAL in the image)
+# CVE overrides (now SDK v2) — extend upstream's own `overrides` block.
+# These are patch-level bumps on express@5 transitive deps (express comes via the
+# MCP SDK v2 server). Regenerating the lock with them applied is how upstream clears
+# npm-audit findings:
+#   proxy-addr  2.0.7 -> 2.0.8  (CVE-2026-90711, auth-bypass-by-spoofing)
 #   body-parser 2.3.0 -> 2.4.0  (CVE-2026-111181)
-#   picomatch   4.0.3 -> 4.0.4  (CVE-2026-33671)
-# NOT overridden: zod 3.25.76 -> 4.6.6 (major, the MCP SDK pins zod@3) and
-# @modelcontextprotocol/sdk itself (4H fixed only in SDK v2 — we pin SDK v1 for
-# vendor parity this wave; the vendored build ships the same). Both deferred,
-# same as upstream and the vendored tree.
+# NOT overridden: zod major (the MCP SDK pins zod@3). Now that we ship SDK v2 the
+# prior SDK-v1 advisory is moot — re-audit with `docker scout` after build and
+# re-derive this override set from the SDK-v2 scan.
 RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));p.overrides={...(p.overrides||{}),'proxy-addr':'>=2.0.8','body-parser':'>=2.4.0'};fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
 # npm install (not ci) regenerates package-lock.json with the overrides applied
 RUN npm install
@@ -76,6 +72,12 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY src/data/ ./data/
+# "skills": bundle the public aap-skills SKILL.md packages + shared context
+# at the paths the server reads — SKILLS_PATH (/app/skills) + SHARED_CONTEXT_PATH
+# (/app/context). loadSkills() recurses these for SKILL.md. skills_enabled defaults
+# to false upstream, so we flip SKILLS_ENABLED=true below (we ship the packages).
+COPY skills/skills/ /app/skills/
+COPY skills/context/ /app/context/
 COPY --from=dumb_init_build /deps/dumb-init/dumb-init /usr/local/bin
 
 USER 1000
@@ -86,7 +88,10 @@ ENV BASE_URL="" \
     MCP_PORT=3000 \
     IGNORE_CERTIFICATE_ERRORS="" \
     SESSION_TIMEOUT="1200" \
-    ENABLE_METRICS=""
+    ENABLE_METRICS="" \
+    SKILLS_ENABLED="true" \
+    SKILLS_PATH="/app/skills" \
+    SHARED_CONTEXT_PATH="/app/context"
 
 ENTRYPOINT ["/usr/local/bin/dumb-init", "--"]
 CMD ["/entrypoint.sh"]

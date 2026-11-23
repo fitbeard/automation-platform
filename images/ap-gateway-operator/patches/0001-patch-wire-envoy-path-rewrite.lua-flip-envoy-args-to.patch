@@ -1,24 +1,16 @@
-From aff74f01c42ac58b255f7f67f07899d1950d4853 Mon Sep 17 00:00:00 2001
+From d26846bdfcc8af2d100ffd236a8d4f2b226bb9c2 Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
-Date: Sat, 21 Nov 2026 14:16:17 +0200
-Subject: [PATCH] patch: flip envoy binary to PATH-relative + init-copy
- path-rewrite lua
+Date: Sun, 22 Nov 2026 01:25:37 +0200
+Subject: [PATCH 1/5] patch: wire envoy-path-rewrite.lua (flip envoy args to
+ PATH-relative + init-copy)
 
-Stock envoy (docker.io/envoyproxy/envoy, _image_proxy) runs 'envoy' from PATH,
-not /usr/bin/envoy; and it needs the gateway's path-rewrite lua on its own FS.
-Re-authored for the 2.6-1794615097 bundle's gateway.deployment.yaml.j2:
-- combine_defaults.yml: _proxy_args '/usr/bin/envoy' -> 'envoy'
-- initContainer copy-envoy-path-rewrite-lua copies the lua baked in the gateway
-  {{ _image }} into a shared emptyDir (envoy-lua)
-- proxy container mounts envoy-lua at GATEWAY_PATH_REWRITE_SCRIPT_FILE path
-- envoy-lua emptyDir volume
 ---
  .../tasks/combine_defaults.yml                    |  2 +-
  .../templates/gateway.deployment.yaml.j2          | 15 +++++++++++++++
  2 files changed, 16 insertions(+), 1 deletion(-)
 
 diff --git a/roles/ansibleautomationplatform/tasks/combine_defaults.yml b/roles/ansibleautomationplatform/tasks/combine_defaults.yml
-index 6a03128..706523f 100644
+index 4c67c81..a59171a 100644
 --- a/roles/ansibleautomationplatform/tasks/combine_defaults.yml
 +++ b/roles/ansibleautomationplatform/tasks/combine_defaults.yml
 @@ -12,7 +12,7 @@
@@ -31,12 +23,12 @@ index 6a03128..706523f 100644
      - '/etc/ansible-automation-platform/gateway/envoy.yaml'
      - "{{ '--concurrency' if combined_proxy.concurrency is defined else '' }}"
 diff --git a/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2 b/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
-index a499d25..9ae8cc7 100644
+index a514a0d..78c71ce 100644
 --- a/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
 +++ b/roles/ansibleautomationplatform/templates/gateway.deployment.yaml.j2
-@@ -137,6 +137,16 @@ spec:
- {% if combined_api.resource_requirements is defined %}
-         resources: {{ combined_api.resource_requirements }}
+@@ -134,6 +134,16 @@ spec:
+ {% if init_container_resource_requirements is defined %}
+         resources: {{ init_container_resource_requirements }}
  {% endif %}
 +      - name: copy-envoy-path-rewrite-lua
 +        image: '{{ _image }}'
@@ -51,7 +43,7 @@ index a499d25..9ae8cc7 100644
        containers:
        - name: proxy
          image: '{{ _image_proxy }}'
-@@ -166,6 +176,9 @@ spec:
+@@ -163,6 +173,9 @@ spec:
          - name: envoy-conf
            mountPath: /etc/ansible-automation-platform/gateway/envoy.yaml
            subPath: envoy.yaml
@@ -61,7 +53,7 @@ index a499d25..9ae8cc7 100644
  {% if gateway_tls_enabled | bool %}
          - name: gateway-tls
            mountPath: /etc/ansible-automation-platform/gateway/gateway.crt
-@@ -293,6 +306,8 @@ spec:
+@@ -290,6 +303,8 @@ spec:
          - name: django-fallback-cache
            mountPath: /var/cache/ansible-automation-platform/gateway
        volumes:

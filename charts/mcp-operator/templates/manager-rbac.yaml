@@ -1,4 +1,4 @@
-{{- $clusterScope := eq .Values.watchNamespace "" -}}
+{{- $clusterScope := or (eq .Values.watchNamespace "") (contains "," .Values.watchNamespace) -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: {{ if $clusterScope }}ClusterRole{{ else }}Role{{ end }}
 metadata:
@@ -30,6 +30,7 @@ rules:
       - replicasets
       - statefulsets
       - ingresses
+      - networkpolicies
     verbs: [create, delete, get, list, patch, update, watch]
   - apiGroups: [apps]
     # NOTE: get + update + patch are all required because the operator's

@@ -22,6 +22,25 @@ spec:
   # Postgres, drop a Secret with host/port/database/username/password keys
   # and reference it via:
   #   postgres_configuration_secret: <secret-name>
+  #
+  # JWT/OIDC workload-identity feature (controller tech-preview). Lets the
+  # controller mint OIDC JWTs for credentials that carry a
+  # `workload_identity_token` field — federated auth to external services
+  # instead of static secrets. Gated by the django setting
+  # FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED, which the DAB feature_flags app
+  # (ansible_base.feature_flags) bridges into django-flags.
+  #
+  # INSTALL-TIME flag: the django-flags DB row (dab_feature_flags.AAPFlag) is
+  # seeded from this setting on the FIRST `awx-manage migrate` (the operator's
+  # migration Job). Setting it here before the initial deploy makes both the
+  # setting path (credential handling) AND flag_enabled() (job/API views)
+  # evaluate True. On an ALREADY-installed cluster the DB row persists at its
+  # old value — re-seed once with:
+  #   awx-manage shell -c "from django.apps import apps; from ansible_base.feature_flags.utils import load_feature_flags; apps.get_model('dab_feature_flags','AAPFlag').objects.filter(name='FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED').delete(); load_feature_flags()"
+  # Remove this block (or set value "False") to keep the feature off.
+  extra_settings:
+    - setting: FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED
+      value: "True"
 
 # ---
 # apiVersion: gateway.networking.k8s.io/v1

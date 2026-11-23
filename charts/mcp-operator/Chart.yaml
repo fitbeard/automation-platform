@@ -17,7 +17,7 @@ description: |
   the operator install.
 type: application
 version: 0.1.0
-appVersion: "2.6-1794615097"
+appVersion: "2.7-1794591068.0"
 keywords:
   - ansible
   - mcp

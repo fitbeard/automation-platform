@@ -45,79 +45,21 @@ SRC_DIR="${SCRIPT_DIR}/src"
 # --- Upstream pin ------------------------------------------------------------
 
 UPSTREAM_URL="https://github.com/ansible/eda-server-operator"
-BASELINE_COMMIT="${BASELINE_COMMIT:-b72dbf05498050209cf1ba799af3f0bd2d896d61}"
+# Baseline jumps from the 2.6 pin b72dbf05 (operator-sdk v1.36.1) to the
+# current devel HEAD, which already contains the v1.40→v1.42.x upgrades (#323/
+# #356/#358) + ALL 20 commits the 2.6 build cherry-picked (HEAD 9120da27 was the
+# last pick) + the NetworkPolicy/affinity/event-stream work 2.6 skipped — all part
+# of the 2.7 era. So the baseline subsumes the whole pick list (cherry-picks empty)
+# AND upstream now ships pod affinity natively (roles/eda/defaults affinity:{} +
+# deployment templates), so our wave-2 patch 0004 (own affinity impl) is DROPPED.
+# Bump this pin as upstream advances.
+BASELINE_COMMIT="${BASELINE_COMMIT:-9120da27dbd1}"
 
-# Upstream SHAs cherry-picked on top of the baseline. Applied in chronological
-# order. Picks 1-7 reproduce AAP 2.6-709; picks 8-15 advance to the
-# 2.6-1787258025 bundle; picks 16-20 advance to the 2.6-1794615097 bundle.
-# Identified by replaying baseline + picks and diffing (FQCN + EDA-kind +
-# image-pin normalized) against the bundle source.
-#
-# Pod affinity (AAP-81880): the downstream implementation ships ONLY in the
-# unlicensed private operator source (eda-controller-rhel9-operator -source OCI,
-# branch 2.6-13, no LICENSE) — and the public commit #365 (2ed37328) is a stub
-# (molecule+watches only). Per the opensource-only rule we do NOT vendor the
-# private code. Instead we reproduce the capability ourselves in patch 0004 from
-# licensed/standard sources: the CRD field is the standard controller-gen
-# corev1.Affinity schema (Apache-2.0 k8s content, identical in every operator)
-# and the defaults/combine/deployment glue is our own authorship. So affinity IS
-# supported (api, ui, event_stream, default_worker, activation_worker, worker).
-# CRITICAL: patch 0004 also sets `snakeCaseParameters: False` on the EDA kind in
-# watches.yaml (the bundle does the same). Without it ansible-operator snake-cases
-# the CR spec, turning affinity.nodeAffinity into affinity.node_affinity; the
-# apiserver then prunes the unknown key and the pod ends up with affinity:{}.
-# The EDA CRD's own fields are already snake_case, so disabling the conversion
-# changes nothing else.
-# #374 (2d0c7b7, "Reconcile UI deployment placement") IS included (pick 18): it
-# removes stale placement fields (nodeSelector/tolerations/affinity/topology) from
-# the UI Deployment when cleared from the CR. It references combined_ui.affinity
-# with no default, which is why it needs patch 0004 (adds affinity:{} to the _ui
-# default so combined_ui.affinity is always defined) — the two are co-dependent.
-# Still SKIPPED:
-#   2ed37328 (#365) — affinity stub (molecule+watches only); nothing shippable.
-#
-# Skipped (deliberate). Base image stays ansible-operator v1.36.1 (confirmed in
-# ALL bundles) — downstream never took the operator-sdk upgrades, same as us:
-#   b7e4168 — Merge operator-sdk-v1.40.0-upgrade (#323)  *** load-bearing skip ***
-#   bb19376 — bump operator-sdk to v1.42.2 (#356)         *** load-bearing skip ***
-#   80e750a — sync Makefile + operator-sdk v1.42.3 (#358) *** load-bearing skip ***
-#   4c9fd0c/f939b71/6d43ede — redis cleanup + reverts (round-trip)
-#   6a5cbe0/1812547 — event-streams / event-persistence (not in bundle)
-#   597ddad/03051830 — Makefile standardization (dev-only)
-#   21c95bc/3cbbf9b/3415718/7bc9494/9a630ef — CI-only
-#   f8aab23 — revert proxy molecule test (test-only)
-#   746a39d — remove manager_auth_proxy_patch ref — bundle KEEPS it (kube-rbac-proxy present, base v1.36.1)
-#   460e160 — affinity parameter (#307) — NOT in bundle (superseded by #81880, pick 18)
-#   (all merge commits skipped; underlying non-merge commits picked directly)
-# Skipped for the 1794615097 bundle (NOT in the new bundle's eda-server-operator;
-# verified by old→new bundle diff):
-#   a4646fc (#345 configurable activation namespace) + 8e81936 (its revert #345) — net round-trip
-#   fa60508 (#362 NetworkPolicies) + a95bbf5 (#369 DNS egress) — NetworkPolicy feature absent from bundle
-#   72fd559 (gate RESOURCE_SERVER on gateway presence) — not in bundle
-#   9608b6c (empty-string secret guards) — not in bundle
-#   c71580e — minikube docker runtime (dev-only)
-CHERRY_PICKS=(
-    "4cd8202304a1904010f625892cc8d943e88dee86"  # 2026-02-03 create_backup_pvc option (#316)               [708]
-    "6bf7694465ae8ea72fead93219c62387c50115f5"  # 2026-03-04 backup_pvc custom name in templates (#324)     [708]
-    "0f094114d8e24eb2f607073aaabc1b5a19d75414"  # 2026-03-23 Fix unquoted timestamps in event templates    [709]
-    "a64e5b10e4c043bdbe199ed4a319e1720ca13708"  # 2026-03-24 Add use_db_compression option (#325)          [709]
-    "8fd2fa2cfb7185d1dbe2a1a1f22a08f326cca072"  # 2026-04-01 Add --no-imports to django commands           [709]
-    "ccccc992f8417eb137784ff87796c42b535b6a75"  # 2026-04-09 Fix dup Jinja2 close tag (activation-worker)  [709]
-    "5183504188245f833d817b0eb8140ee1439bdb9c"  # 2026-04-09 Fix dup Jinja2 close tags (other 2 templates) [709]
-    "c13fae8d5468632d0e8b6e9e1d68aea6c7c161ad"  # 2026-04-24 feat: proxy env var support for EDA containers (#341)  [1787258025]
-    "afef412f876780b4858992ca5be3d541e53a1eb4"  # 2026-04-27 fix(eda-api): mount bundle_cacert in gunicorn container [1787258025]
-    "dd35b5c7fd078f4f6933e01e304f67745c541521"  # 2026-05-06 refactor: proxy env vars -> ConfigMap-only, drop CRD fields (#346) [1787258025]
-    "cfdc6b251b24e5cedb2e94813e687e7ff907ec9e"  # 2026-06-10 deprecate postgres_keep_pvc_after_upgrade (#352) [1787258025]
-    "1dcdb3fbf1efec5a74d08e423fcb9888d5d47f7d"  # 2026-06-10 Set WORKER_KIND to websocket on daphne          [1787258025]
-    "5680468d903a0150a1990bdc4cab68358526ec20"  # 2026-06-15 allow skipping PostgreSQL backup/restore        [1787258025]
-    "1570553001e21d7e1e3ee3d27d27af171962e53f"  # 2026-07-23 fix: augment NO_PROXY in proxy-env ConfigMap (#359) [1787258025]
-    "0416746d1c74010e02b9de4906913ba5b2ca795e"  # 2026-07-24 fix: remove chmod/chown from backup postgres task (#360) [1787258025]
-    "91c0a6f9f8aa"                                # 2026-07-27 fix: [AAP-84188] add a finalizer playbook to the EDA CR (#361) [1794615097]
-    "cd0d21188454"                               # 2026-08-27 fix: preserve backup_dir on finalizer path for clean_backup_on_delete (#363) [1794615097]
-    "2d0c7b7ec60e"                               # 2026-10-23 fix [AAP-92389]: reconcile removed UI placement fields (#374) [1794615097] — compatible via patch 0004 (combined_*.affinity defined)
-    "04cf0a850d1c"                               # 2026-10-27 fix(eda): qualify activation endpoints for separate namespaces (#375) [1794615097]
-    "9120da27dbd1"                               # 2026-11-03 fix: qualify activation database host for separate namespaces (#376) [1794615097]
-)
+# ansible-operator base image (devel HEAD Dockerfile = v1.42.3, the native base).
+BASE_IMAGE_TAG="${BASE_IMAGE_TAG:-v1.42.3}"
+
+# No cherry-picks for 2.7 — the baseline above contains them all.
+CHERRY_PICKS=()
 
 # --- Flags -------------------------------------------------------------------
 
@@ -138,9 +80,9 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-1794615097}"
-DEFAULT_EDA_VERSION="${DEFAULT_EDA_VERSION:-1.2.15}"
-DEFAULT_EDA_UI_VERSION="${DEFAULT_EDA_UI_VERSION:-2.6.16}"
+VERSION="${VERSION:-2.7-1794591068.0}"
+DEFAULT_EDA_VERSION="${DEFAULT_EDA_VERSION:-1.3.15}"
+DEFAULT_EDA_UI_VERSION="${DEFAULT_EDA_UI_VERSION:-2.7.14}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-server-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
@@ -169,8 +111,15 @@ git config user.name  "AAP Rebuild"
 echo "==> Checking out baseline ${BASELINE_COMMIT}"
 git checkout --quiet "$BASELINE_COMMIT"
 
+# Pin the ansible-operator base image in the upstream Dockerfile (HEAD = v1.42.3,
+# its native base — ubi-minimal + microdnf; no adaptation needed).
+echo "==> Pinning base image: ansible-operator:${BASE_IMAGE_TAG}"
+_sedi() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
+_sedi -E "s|(operator-framework/ansible-operator):v[0-9]+\.[0-9]+\.[0-9]+|\1:${BASE_IMAGE_TAG}|" "${SRC_DIR}/Dockerfile"
+grep -m1 '^FROM' "${SRC_DIR}/Dockerfile" | sed 's/^/    /'
+
 echo "==> Applying ${#CHERRY_PICKS[@]} upstream cherry-picks:"
-for sha in "${CHERRY_PICKS[@]}"; do
+for sha in ${CHERRY_PICKS[@]+"${CHERRY_PICKS[@]}"}; do
     short="$(git rev-parse --short=8 "$sha")"
     subject="$(git log --format='%s' -n 1 "$sha")"
     echo "    $short  $subject"

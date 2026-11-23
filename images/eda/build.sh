@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Build EDA Server + EDA UI container images from SRPM sources.
+# Build EDA Server + EDA UI container images from the "-source" OCIs
+# (SRPM-less). aap-eda from eda-controller-rhel9:-source; the shared aap-ui SPA
+# from gateway-rhel9:-source. See extract-source-oci.sh.
 #
 # Usage:
 #   ./build.sh                                     # Build both images for local platform
@@ -15,31 +17,39 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# SRPM URLs (public FTP, Apache-2.0 licensed)
-EDA_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-eda-controller-1.2.15-1.el9ap.src.rpm"
-AP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.16-1.el9ap.src.rpm"
+# --- "-source" OCI sources (BSI, Apache-2.0; replaces SRPM) ---------
+# Pull these locally first (registry.redhat.io auth). Override via env for a
+# newer cut. The EDA app source (aap-eda) is materialized at the wrapper root as
+# `aap-eda-controller`; the shared platform UI (aap-ui) is bundled only in the
+# gateway "-source" at `aap-ui` (the EDA "-source" ships no UI — eda-ui is an
+# nginx repackage of static the app build produces).
+# shellcheck source=extract-source-oci.sh
+. "${SCRIPT_DIR}/extract-source-oci.sh"
 
-# Local cache directories
-EDA_SRPM_DIR="${SCRIPT_DIR}/eda-srpm"
-AP_UI_SRPM_DIR="${SCRIPT_DIR}/ap-ui-srpm"
-EDA_TARBALL_GLOB="automation-eda-controller-*.tar.gz"
-AP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
+EDA_SOURCE_IMAGE="${EDA_SOURCE_IMAGE:-registry.redhat.io/ansible-automation-platform-27/eda-controller-rhel9:1794560971-source}"
+EDA_SOURCE_SUBPATH="aap-eda-controller"
+AP_UI_SOURCE_IMAGE="${AP_UI_SOURCE_IMAGE:-registry.redhat.io/ansible-automation-platform-27/gateway-rhel9:2.7.20261116-1794543629-source}"
+AP_UI_SOURCE_SUBPATH="aap-ui"
+
+# Scratch extraction dirs (wiped each run)
+EDA_EXTRACT_DIR="${SCRIPT_DIR}/.src-eda"
+AP_UI_EXTRACT_DIR="${SCRIPT_DIR}/.src-gateway"
 
 # Build directories
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/eda-src}"
 AP_UI_DIR="${AP_UI_DIR:-${SCRIPT_DIR}/ap-ui}"
 
-# DAB commit on public ansible/django-ansible-base. The EDA 1.2.15 SRPM was cut
-# 2026-11-09 (spec %changelog). We pin 4f7889a8 (public devel, 2026-11-12) — the
-# SAME commit as the AWX 4.7.20 refresh — for cross-component DAB parity across
-# the release wave (identical resource-server/JWT behavior when AWX + EDA share
-# a cluster). EDA installs DAB via pip from this SHA (Dockerfile); the SRPM does
-# not bundle DAB. EDA 1.2.15 adds no new ansible_base.* symbols, so it resolves.
+# DAB commit on public ansible/django-ansible-base. Vendors DAB at branch
+# 2.7.20261116 (non-public); the nearest public devel commit on/before 2026-11-16
+# is 4f7889a8 (2026-11-12) — the SAME pin as the 2.7 controller, for cross-
+# component DAB parity (resource-server/JWT interop when controller + EDA share a
+# cluster). EDA installs DAB via pip from this SHA (Dockerfile); the app source
+# does not bundle DAB.
 DAB_COMMIT="4f7889a86d6479217e81d99fc46dadd5ea763432"
 
-# Image configuration
-VERSION="${VERSION:-1.2.15}"
-UI_VERSION="${UI_VERSION:-2.6.16}"
+# Image configuration (eda 1.3.15, ui branch 2.7.14)
+VERSION="${VERSION:-1.3.15}"
+UI_VERSION="${UI_VERSION:-2.7.14}"
 EDA_IMAGE_NAME="${EDA_IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-server}"
 EDA_IMAGE_TAG="${EDA_IMAGE_TAG:-$VERSION}"
 UI_IMAGE_NAME="${UI_IMAGE_NAME:-quay.io/fitbeard/automation-platform/eda-ui}"
@@ -48,7 +58,7 @@ PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="eda-multiarch"
 
 # Pre-flight: check required tools
-for cmd in docker tar curl rpm2cpio cpio; do
+for cmd in docker tar; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: '$cmd' is required but not found in PATH."
         exit 1
@@ -77,7 +87,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-echo "=== EDA Server + UI Rebuild from SRPM sources ==="
+echo "=== EDA Server + UI Rebuild from -source OCIs ==="
 echo "  EDA version: ${VERSION}"
 echo "  UI version:  ${UI_VERSION}"
 echo "  Server:      ${EDA_IMAGE_NAME}:${EDA_IMAGE_TAG}"
@@ -102,59 +112,47 @@ rm -rf "${BUILD_DIR}" "${AP_UI_DIR}"
 echo ""
 
 # -------------------------------------------------------------------
-# 1. Download + extract EDA SRPM
+# 1. Extract the EDA app source (aap-eda) from the "-source" OCI.
 # -------------------------------------------------------------------
-if [ -d "${BUILD_DIR}" ]; then
-    echo "=> EDA source already exists: ${BUILD_DIR}"
-    echo "   Remove it to force a fresh extract."
-else
-    mkdir -p "${EDA_SRPM_DIR}"
-    SRPM_FILE="${EDA_SRPM_DIR}/$(basename "${EDA_SRPM_URL}")"
-    if [ ! -f "${SRPM_FILE}" ]; then
-        echo "=> Downloading EDA SRPM..."
-        curl -fSL -o "${SRPM_FILE}" "${EDA_SRPM_URL}"
-    fi
-    echo "=> Extracting EDA SRPM..."
-    cd "${EDA_SRPM_DIR}" && rpm2cpio "${SRPM_FILE}" | cpio -idm --quiet 2>/dev/null
-    EDA_TARBALL=$(ls ${EDA_SRPM_DIR}/${EDA_TARBALL_GLOB} 2>/dev/null | head -1)
-    if [ -z "${EDA_TARBALL}" ]; then
-        echo "   ERROR: Could not find ${EDA_TARBALL_GLOB} in SRPM contents"
-        exit 1
-    fi
-    echo "   Found: $(basename "${EDA_TARBALL}")"
-    mkdir -p "${BUILD_DIR}"
-    tar xzf "${EDA_TARBALL}" -C "${BUILD_DIR}" --strip-components=1
-    cd "${SCRIPT_DIR}"
-    echo "   Done."
+echo "=> Extracting EDA source from ${EDA_SOURCE_IMAGE##*/}..."
+EDA_WRAPPER=$(extract_source_oci "${EDA_SOURCE_IMAGE}" "${EDA_EXTRACT_DIR}")
+# LICENSE GATE: refuse to build a distributable image unless the materialized
+# EDA (aap-eda) tree still ships an OSS LICENSE (see extract-source-oci.sh) —
+# catches a future -source bump that drops or relicenses it.
+assert_submodule_license "${EDA_WRAPPER}" "${EDA_SOURCE_SUBPATH}"
+EDA_SRC="${EDA_WRAPPER}/${EDA_SOURCE_SUBPATH}"
+if [ ! -d "${EDA_SRC}/src/aap_eda" ]; then
+    echo "   ERROR: no aap_eda tree at ${EDA_SOURCE_SUBPATH} in the -source image"
+    exit 1
 fi
+mkdir -p "${BUILD_DIR}"
+cp -a "${EDA_SRC}/." "${BUILD_DIR}/"
+echo "   aap-eda: $(find "${BUILD_DIR}/src/aap_eda" -name '*.py' | wc -l | tr -d ' ') .py files"
+echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
-# 2. Download + extract UI SRPM
+# 2. Extract the shared platform UI (aap-ui) from the gateway "-source".
+#    Strip the Cachi2-wired lockfiles so npm resolves from the public registry.
 # -------------------------------------------------------------------
-if [ -d "${AP_UI_DIR}" ]; then
-    echo "=> UI source already exists: ${AP_UI_DIR}"
-    echo "   Remove it to force a fresh extract."
-else
-    mkdir -p "${AP_UI_SRPM_DIR}"
-    UI_SRPM_FILE="${AP_UI_SRPM_DIR}/$(basename "${AP_UI_SRPM_URL}")"
-    if [ ! -f "${UI_SRPM_FILE}" ]; then
-        echo "=> Downloading UI SRPM..."
-        curl -fSL -o "${UI_SRPM_FILE}" "${AP_UI_SRPM_URL}"
-    fi
-    echo "=> Extracting UI SRPM..."
-    cd "${AP_UI_SRPM_DIR}" && rpm2cpio "${UI_SRPM_FILE}" | cpio -idm --quiet 2>/dev/null
-    UI_TARBALL=$(ls ${AP_UI_SRPM_DIR}/${AP_UI_TARBALL_GLOB} 2>/dev/null | head -1)
-    if [ -z "${UI_TARBALL}" ]; then
-        echo "   ERROR: Could not find ${AP_UI_TARBALL_GLOB} in SRPM contents"
-        exit 1
-    fi
-    echo "   Found: $(basename "${UI_TARBALL}")"
-    mkdir -p "${AP_UI_DIR}"
-    tar xzf "${UI_TARBALL}" -C "${AP_UI_DIR}" --strip-components=1
-    cd "${SCRIPT_DIR}"
-    echo "   Done."
+echo "=> Extracting aap-ui from ${AP_UI_SOURCE_IMAGE##*/}..."
+AP_UI_WRAPPER=$(extract_source_oci "${AP_UI_SOURCE_IMAGE}" "${AP_UI_EXTRACT_DIR}")
+# LICENSE GATE: the EDA UI comes from the gateway -source wrapper; assert its OSS
+# LICENSE before bundling it into a distributable image.
+assert_submodule_license "${AP_UI_WRAPPER}" "${AP_UI_SOURCE_SUBPATH}"
+AP_UI_SRC="${AP_UI_WRAPPER}/${AP_UI_SOURCE_SUBPATH}"
+if [ ! -d "${AP_UI_SRC}/frontend/eda" ]; then
+    echo "   ERROR: no aap-ui frontend/eda at ${AP_UI_SOURCE_SUBPATH} in the gateway -source"
+    exit 1
 fi
+mkdir -p "${AP_UI_DIR}"
+cp -a "${AP_UI_SRC}/." "${AP_UI_DIR}/"
+# The vendor package-lock.json pins every tarball to the Konflux hermetic Cachi2
+# cache (file:///cachi2/...), absent outside their build — drop the lockfiles so
+# the UI build resolves from the public npm registry (.npmrc guards kept).
+find "${AP_UI_DIR}" -name 'package-lock.json' -not -path '*/node_modules/*' -delete
+echo "   aap-ui: stripped Cachi2 lockfiles (will resolve from public npm)"
+echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------

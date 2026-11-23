@@ -82,38 +82,66 @@ WORKDIR /tmp/src/
 # pkg_resources still works (removed in setuptools>=81, see deprecation warning).
 RUN sed -i 's/"setuptools>=45"/"setuptools>=45,<81"/' pyproject.toml
 
-# Apply the SRPM's own vendored-pip/distlib security patch to the awx venv.
-# Upstream ships this in requirements/patches and wires it via `make patch_pip`,
-# but only the top-level `requirements` target runs it — our build calls
-# `requirements_awx` directly, so invoke it explicitly here. This is upstream's
-# mitigation (not one of our overrides): it targets the ensurepip pip (25.3)
-# and no-ops cleanly if a future pip already contains the fix.
-RUN VENV_BASE=/var/lib/awx/venv make patch_pip
+# NOTE: AAP 2.6 shipped a vendored-pip/distlib patch wired via `make patch_pip`;
+# that Makefile target was REMOVED in the 2.7 controller source (4.8.14), so the
+# step is dropped. The 2.7 tree pins pip/setuptools directly in the build
+# (Containerfile: pip==25.3, setuptools==80.9.0) with no separate pip patch.
 
 # Build the UI from AAP UI source (aap-ui, Apache-2.0).
 # The source is copied into the build context by build.sh (section 6).
 # We build only frontend/awx (standalone AWX UI with Vite), then place the
-# output where AWX expects it: awx/ui_next/build/awx/
+# output where AWX 2.7 expects it: awx/ui/build/awx/ (see the RUN below).
 COPY aap-ui/ /tmp/aap-ui/
 # Inject VERSION and PRODUCT into Vite build environment so the About modal
 # shows the version string instead of undefined.  vite.config.ts defines
 # `process.env` as a limited object — we add our vars to it.
 RUN sed -i 's/  AWX_WEBSOCKET_PREFIX,/  AWX_WEBSOCKET_PREFIX,\n  VERSION: process.env.VERSION || "",\n  PRODUCT: "AWX",/' /tmp/aap-ui/frontend/awx/vite.config.ts
-RUN cd /tmp/aap-ui && VERSION="${VERSION}" npm ci && \
+# `npm install` (not `npm ci`): the vendor's Cachi2-wired lockfile was stripped
+# in build.sh so deps resolve from the public npm registry at package.json
+# versions (the .npmrc keeps ignore-scripts + min-release-age guards).
+# Place the built UI at awx/ui/build/awx — the native 2.7 UI location. AAP 2.5+
+# made the controller headless and moved the UI dir from ui_next/build → ui/build:
+# 4.8.14's settings put `awx/ui/build/awx` in TEMPLATES.DIRS (where IndexView
+# resolves index_awx.html) and `awx/ui/build` in STATICFILES_DIRS, and MANIFEST.in
+# already ships `recursive-include awx/ui/build *`. So building here needs NO
+# settings/MANIFEST patch — Django finds the template and collectstatic the assets.
+RUN cd /tmp/aap-ui && VERSION="${VERSION}" npm install && \
     cd frontend/awx && VERSION="${VERSION}" npx vite build --base /static/awx/ && \
-    mkdir -p /tmp/src/awx/ui_next/build/awx && \
-    cp -r dist/* /tmp/src/awx/ui_next/build/awx/ && \
-    mv /tmp/src/awx/ui_next/build/awx/index.html /tmp/src/awx/ui_next/build/awx/index_awx.html && \
-    cp /tmp/aap-ui/frontend/assets/awx-logo.svg /tmp/src/awx/ui_next/build/awx/awx-logo.svg && \
-    (cp /tmp/aap-ui/frontend/assets/awx-icon.svg /tmp/src/awx/ui_next/build/awx/awx-icon.svg 2>/dev/null || true) && \
+    mkdir -p /tmp/src/awx/ui/build/awx && \
+    cp -r dist/* /tmp/src/awx/ui/build/awx/ && \
+    mv /tmp/src/awx/ui/build/awx/index.html /tmp/src/awx/ui/build/awx/index_awx.html && \
+    cp /tmp/aap-ui/frontend/assets/awx-logo.svg /tmp/src/awx/ui/build/awx/awx-logo.svg && \
+    (cp /tmp/aap-ui/frontend/assets/awx-icon.svg /tmp/src/awx/ui/build/awx/awx-icon.svg 2>/dev/null || true) && \
     rm -rf /tmp/aap-ui
 
-# Create an empty old UI build dir to satisfy MANIFEST.in (recursive-include awx/ui/build *)
-# The old CRA/webpack UI is no longer built — the Vite UI above is the default.
-RUN mkdir -p awx/ui/build/static
+# Debrand the built UI bundle: collapse "<Vendor> <Brand> Automation Platform" ->
+# "Automation Platform" across the compiled JS/CSS assets AND the i18next locale
+# files (locales/<lang>/translation.json — i18next renders values straight from
+# these, and uses the English sentence as the lookup key, so both the .js keys and
+# the .json keys/values must collapse identically to stay consistent). Operating on
+# the built output (not the TSX source) catches product-name strings from our own
+# components (e.g. the HashiCorp Vault OIDC config panel) AND any pulled in from
+# bundled dependencies, in a single structural pass. The mark is never written here.
+RUN find /tmp/src/awx/ui/build/awx -type f \( -name '*.js' -o -name '*.css' -o -name '*.json' \) \
+      -exec sed -i -E 's|([A-Z][a-z]+ )+Automation Platform|Automation Platform|g' {} +
 
 # Build sdist with HEADLESS=yes to skip Makefile UI targets.
 RUN HEADLESS=yes make sdist && /var/lib/awx/venv/awx/bin/pip install dist/awx.tar.gz
+
+# Debrand the runtime product name across the installed awx_plugins package:
+#   - interfaces/_temporary_private_licensing_api.py: detect_server_product_name()
+#     returns the vendor's branded name when /var/lib/awx/.tower_version is present
+#     (drives X-API-Product-Name, the upgrade page, ...).
+#   - credentials/plugins.py + inventory/plugins.py: credential-type / inventory
+#     field labels + help_text that surface in the UI create-credential wizards.
+# Structural collapse "<Vendor> <Brand> Automation Platform" -> "Automation Platform"
+# (the mark is never written here). detect_server_product_name stays != 'AWX', so the
+# full managed credential-type and inventory-source sets still load. Stale .pyc are
+# recompiled at runtime (mtime bump).
+RUN d="$(find /var/lib/awx/venv -type d -name awx_plugins | head -1)" && \
+    test -n "$d" && \
+    find "$d" -name '*.py' -exec sed -i -E 's|([A-Z][a-z]+ )+Automation Platform|Automation Platform|g' {} + && \
+    grep -q "'Automation Platform'" "$d/interfaces/_temporary_private_licensing_api.py"
 
 # Collect static files.
 # AWX_MODE=defaults bypasses the production settings assertion (no /etc/tower/ needed).
@@ -175,6 +203,20 @@ RUN rm -rf /root/.cache && rm -rf /tmp/*
 
 # Copy app from builder
 COPY --from=builder /var/lib/awx /var/lib/awx
+
+# AAP product marker. awx_plugins' runtime-name helper
+# (detect_server_product_name in awx_plugins.interfaces._temporary_private_licensing_api)
+# treats the install as community AWX UNLESS /var/lib/awx/.tower_version exists.
+# In the community-AWX path, load_credentials() (awx/main/models/credential.py)
+# registers ONLY the 8 base managed credential types and skips BOTH the
+# `awx_plugins.managed_credentials.supported` set (cloud providers: aws, azure_rm,
+# gce, vmware, openstack, satellite6, ...) AND every `awx_plugins.credentials`
+# external secret-backend plugin (HashiCorp, CyberArk, Azure KV, Thycotic, AWS SM,
+# GitHub App, ...). The vendor's packaging drops this marker file; our
+# source rebuild must create it to get the full set (8 -> 34 types). Its content
+# MUST equal awx.__version__ or the asgi.py/wsgi.py production version check
+# hard-fails — derive it from the installed package so it can never drift.
+RUN /var/lib/awx/venv/awx/bin/python -c "import awx; print(awx.__version__)" > /var/lib/awx/.tower_version
 
 RUN ln -s /var/lib/awx/venv/awx/bin/awx-manage /usr/bin/awx-manage
 

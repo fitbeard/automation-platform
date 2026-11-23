@@ -1,0 +1,29 @@
+From 740f8de2a5b7d8b27e30751b6fbb684e410b6046 Mon Sep 17 00:00:00 2001
+From: AAP Rebuild <aap-rebuild-bot@localhost>
+Date: Sun, 22 Nov 2026 01:27:47 +0200
+Subject: [PATCH 3/5] patch: replace status.phase field-selector with Jinja
+ filter
+
+---
+ roles/ansibleautomationplatform/tasks/post_install.yml | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/roles/ansibleautomationplatform/tasks/post_install.yml b/roles/ansibleautomationplatform/tasks/post_install.yml
+index c293ccb..4ae1b0a 100644
+--- a/roles/ansibleautomationplatform/tasks/post_install.yml
++++ b/roles/ansibleautomationplatform/tasks/post_install.yml
+@@ -201,10 +201,11 @@
+         label_selectors:
+           - "app.kubernetes.io/name={{ _controller_name }}-web"
+           - "app.kubernetes.io/component=awx"
+-        field_selectors:
+-          - status.phase=Running
+       register: controller_web_pod
+-      until: controller_web_pod.resources | length > 0
++      until: >
++        controller_web_pod.resources
++        | selectattr('status.phase', 'eq', 'Running')
++        | list | length > 0
+       retries: 10
+       delay: 5
+ 

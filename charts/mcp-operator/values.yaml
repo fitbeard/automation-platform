@@ -6,7 +6,7 @@ replicaCount: 1
 # -- Operator container image
 image:
   repository: quay.io/fitbeard/automation-platform/ansible-ai-connect-operator
-  tag: 2.6-1794615097
+  tag: 2.7-1794591068.0
   pullPolicy: IfNotPresent
 
 # -- Pull secrets for private registries
@@ -37,14 +37,14 @@ leaderElection:
 relatedImages:
   # Pinned to a specific git-sha-tagged build. Bump when build-mcp-server
   # rebuilds against a newer ansible/aap-mcp-server upstream commit.
-  mcpServer: quay.io/fitbeard/automation-platform/mcp-server:1108adb8
+  mcpServer: quay.io/fitbeard/automation-platform/mcp-server:174a0801
 
 # -- Optional kube-rbac-proxy sidecar exposing /metrics behind authn/authz.
-#    Matches downstream behavior — config/default/kustomization.yaml
-#    applies manager_auth_proxy_patch.yaml, same as our other 4 charts.
-#    Disable on small / dev clusters to skip the extra container.
+#     operator base (ansible-operator v1.42.3) REMOVED kube-rbac-proxy
+#    (operator-sdk v1.40+ drops it), same as our awx/eda/gateway 2.7 charts —
+#    so this is disabled by default.
 kubeRbacProxy:
-  enabled: true
+  enabled: false
   image:
     repository: registry.k8s.io/kubebuilder/kube-rbac-proxy
     tag: v0.15.0

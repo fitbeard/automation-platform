@@ -1,0 +1,57 @@
+From 1d78b6a376c924cb9ede78e124d43480e238f570 Mon Sep 17 00:00:00 2001
+From: AAP Rebuild <aap-rebuild-bot@localhost>
+Date: Sun, 22 Nov 2026 21:50:11 +0200
+Subject: [PATCH] patch: multi-namespace-aware postgres NetworkPolicy (operator
+ peers cross-ns)
+
+The postgres NP admits the operator peers (sub-operator managed-by values and
+the controller-manager) via podSelector only, with no namespaceSelector, so they
+match in the postgres pod's own namespace only. In a multi-namespace install
+(operators in e.g. ansible-operators, the AAP CR in ansible) the operator runs
+the 'Create PostgreSQL users' task (postgresql_user) from its OWN namespace, so a
+same-namespace peer blocks it under default-deny and the whole reconcile stalls.
+
+Pair namespaceSelector: {} with each OPERATOR peer so it matches cross-namespace;
+the managed-by / control-plane podSelector (AND within the same list item) still
+restricts the match to operator pods. The EDA activation peer (app: eda, runtime
+Job pods) is left same-namespace. The gateway NP already pairs its controller-
+manager peer with namespaceSelector: {} upstream, so no change is needed there.
+---
+ .../templates/postgres.networkpolicy.yaml.j2     | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/roles/postgres/templates/postgres.networkpolicy.yaml.j2 b/roles/postgres/templates/postgres.networkpolicy.yaml.j2
+index d222b38..a5b5f0a 100644
+--- a/roles/postgres/templates/postgres.networkpolicy.yaml.j2
++++ b/roles/postgres/templates/postgres.networkpolicy.yaml.j2
+@@ -24,8 +24,19 @@ spec:
+     # (for DB initialization). Uses an explicit list of known sub-operator
+     # managed-by values rather than operator: Exists, which would allow any
+     # pod in a shared namespace with a managed-by label to reach the database.
++    #
++    # The operator peers (managed-by sub-operators + the controller-manager) are
++    # paired with `namespaceSelector: {}` so they match across namespaces: in a
++    # multi-namespace install (operators in e.g. `ansible-operators`, the AAP CR
++    # in `ansible`) the operator pod creates PostgreSQL users FROM its own
++    # namespace, which a podSelector-only (same-namespace) peer would block,
++    # stalling the whole reconcile. `namespaceSelector: {} + podSelector` is an
++    # AND within one list item, so the managed-by / control-plane podSelector
++    # still restricts the match to operator pods, in any namespace. The EDA
++    # activation peer below stays same-namespace (runtime Job pods, not operators).
+     - from:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchExpressions:
+               - key: app.kubernetes.io/managed-by
+                 operator: In
+@@ -39,7 +50,8 @@ spec:
+                   - 'automationmetricsservice-operator'
+                   - 'ansible-mcp-server-operator'
+                   - 'ansible-lightspeed-operator'
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               control-plane: controller-manager
+         # EDA activation Job pods (created at runtime by activation workers,

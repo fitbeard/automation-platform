@@ -30,43 +30,40 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${SCRIPT_DIR}/src"
+SKILLS_DIR="${SCRIPT_DIR}/skills"
 DUMB_INIT_DIR="${SCRIPT_DIR}/deps/dumb-init"
 
 # --- Upstream pins ----------------------------------------------------------
 #
-# We ship 1108adb (2026-09-22 "Merge #197 AAP-88192 schedule CRUD tools") —
-# the last SDK-v1 commit on public main before the MCP SDK v1->v2 migration
-# merged (661dc63, 2026-09-25). The vendor's tech-preview runtime image
-# (tag 2.6.20260923-1789669036) is built from commit
-# a41e7d46b3396f6439ea32f3e330be9c7fa94e28 (read from the image's own
-# `vcs-ref`/`org.opencontainers.image.revision` labels; version 2.6.20260923) —
-# that commit is NOT on public github.com/ansible/aap-mcp-server. Confirmed from
-# the -source container's materialized build-wrapper tree: the vendored branch is
-# still on @modelcontextprotocol/sdk ^1.26.0 (SDK v1) + js-yaml 4.3.2, and has
-# DIVERGED from public main (it still carries session-era src/session.ts, which
-# public removed, and lacks public's src/oauth2/). So no public commit matches
-# the vendored tree exactly — same situation as the controller sources.
+# The vendor's mcp-server (mcp-server-rhel9, version 2.7.20261111, runtime
+# vcs-ref 78e5738 — NOT a public ref, same as prior waves) has MIGRATED to MCP SDK
+# v2 (@modelcontextprotocol/{node,server,client} ^2.x + Express 5) and now ships
+# the "skills" feature: it bundles the public `ansible/aap-skills` SKILL.md
+# knowledge packages served THROUGH the server. So the wave-2 "stay SDK-v1 for
+# vendor parity" rationale no longer holds — 2.7 parity IS SDK v2 + skills.
 #
-# Pin policy (user decision, refresh wave 2): VENDOR-PARITY, not bleeding edge.
-# The vendored 2.6.20260923 build is still SDK v1 with no "skills" feature, so we
-# pin to the newest SDK-v1 public main commit (1108adb) rather than public HEAD
-# (174a0801+), which has already migrated to MCP SDK v2 + Express 5 + the
-# SEP-2640 skills extension — features the vendor has not shipped. Staying SDK v1
-# keeps behavioural parity with the vendored build while still taking every
-# pre-v2 security/functional fix.
+# Pin policy (VENDOR-PARITY): newest public main (SDK v2 + skills) + public
+# aap-skills. The exact vendor source commit (78e5738) is non-public, so we pin
+# public main HEAD, which is the public SDK-v2 tree the vendor's build tracks.
+#   - aap-mcp-server 174a0801 (2026-11-03, "#213 skills admin control") — SDK v2,
+#     Express 5, loadSkills() from @modelcontextprotocol/server/ext/skills/node.
+#   - aap-skills 1090eb3 (2026-11-06) — the SKILL.md packages + shared context/.
+# The server reads skills from SKILLS_PATH (default /app/skills) + SHARED_CONTEXT_PATH
+# (/app/context); skills_enabled defaults to FALSE upstream, so the Dockerfile sets
+# SKILLS_ENABLED=true (we bundle them, matching the vendor 2.7 build).
 #
-# Uplift over our prior pin 03876616 (2026-09-02), all SDK v1:
-#   - fast-uri 3.1.7 (CVE-2026-84292, #192)
-#   - skip empty/null optional query params in buildToolUrl (AAP-90617, #190)
-#   - full schedule CRUD in the job_management toolset (AAP-88192, #197)
-# Dockerfile/tsconfig/node (>=22) unchanged vs 03876616 — builds as-is.
+# data/ (OpenAPI specs) + aap-mcp.sample.yaml live at the repo root (= the clone
+# dir src/), so the Dockerfile's COPY src/data/ + COPY src/aap-mcp.sample.yaml are
+# unchanged. Build flow (npm install + tsc, node >=22) is the same for SDK v2.
 #
-# Vendored-pin identification: read the runtime image's vcs-ref label. The
-# -source container additionally lets us confirm SDK major + divergence (done
-# above); for routine bumps the runtime label + /app diff is enough.
+# Vendored-pin identification: read the runtime image's vcs-ref label (version +
+# revision). CVE overrides must be re-audited for SDK v2 (express 5) after build.
 
 MCP_SERVER_URL="https://github.com/ansible/aap-mcp-server"
-MCP_SERVER_SHA="${MCP_SERVER_SHA:-1108adb8309fb4da566285479a11c0b9f0f90469}"
+MCP_SERVER_SHA="${MCP_SERVER_SHA:-174a08018c31b69279f1bfb2ed245ab57c86abd2}"
+
+AAP_SKILLS_URL="https://github.com/ansible/aap-skills"
+AAP_SKILLS_SHA="${AAP_SKILLS_SHA:-1090eb3e2fb649fa09dc301bd0fd9bf11c29d6bc}"
 
 DUMB_INIT_URL="https://github.com/Yelp/dumb-init"
 DUMB_INIT_TAG="${DUMB_INIT_TAG:-v1.2.5}"
@@ -121,9 +118,42 @@ mkdir -p "$(dirname "$DUMB_INIT_DIR")"
 echo "==> Cloning ${DUMB_INIT_URL} @ ${DUMB_INIT_TAG}"
 git clone --quiet --depth 1 --branch "$DUMB_INIT_TAG" "$DUMB_INIT_URL" "$DUMB_INIT_DIR"
 
+echo "==> Wiping ${SKILLS_DIR} and starting fresh"
+rm -rf "$SKILLS_DIR"
+echo "==> Cloning ${AAP_SKILLS_URL}"
+git clone --quiet "$AAP_SKILLS_URL" "$SKILLS_DIR"
+( cd "$SKILLS_DIR" && git checkout --quiet "$AAP_SKILLS_SHA" )
+
 echo "==> Pinned versions:"
 echo "    aap-mcp-server: $(cd "$SRC_DIR" && git log -1 --format='%h %ai - %s')"
+echo "    aap-skills:     $(cd "$SKILLS_DIR" && git log -1 --format='%h %ai - %s')"
 echo "    dumb-init:      $(cd "$DUMB_INIT_DIR" && git log -1 --format='%h - %s')"
+
+# --- Drop out-of-scope services: galaxy (hub) + lightspeed (AI assistant) -----
+# Both are out of scope for this rebuild — we ship no Automation Hub or Lightspeed
+# backend, so surfacing their MCP tools (galaxy 36 + lightspeed 10) to clients only
+# invites calls that 404. Disable the two services in the config (the loader skips
+# disabled services before reading their spec), drop the now-empty content_discovery
+# toolset (all its tools were galaxy/lightspeed), and remove the unused specs
+# (lightspeed.json also carries vendor "Lightspeed" branding). Result: 579 -> 533
+# tools; controller/gateway/eda unaffected; all 5 skills still load.
+echo "==> Dropping galaxy + lightspeed services (out of scope)"
+python3 - "$SRC_DIR/aap-mcp.sample.yaml" <<'PY'
+import re, sys
+f = sys.argv[1]
+c = open(f).read()
+for svc in ("galaxy", "lightspeed"):
+    new, n = re.subn(r'(\n  - name: ' + svc + r'\n)', r'\1    enabled: false\n', c, count=1)
+    assert n == 1, f"service '{svc}' not found in {f}"
+    c = new
+# remove the content_discovery toolset (its entries are all galaxy/lightspeed)
+c, n = re.subn(r'\n  content_discovery:\n(?:    -[^\n]*\n)+', '\n', c, count=1)
+assert n == 1, "content_discovery toolset block not found"
+open(f, 'w').write(c)
+print("    galaxy + lightspeed disabled; content_discovery removed")
+PY
+rm -f "$SRC_DIR/data/galaxy-openapi.json" "$SRC_DIR/data/lightspeed.json"
+echo "    removed data/galaxy-openapi.json + data/lightspeed.json"
 
 if [[ $PREP_ONLY -eq 1 ]]; then
     echo "==> --prep-only: skipping docker build"

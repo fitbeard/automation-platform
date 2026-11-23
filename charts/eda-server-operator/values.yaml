@@ -6,7 +6,7 @@ replicaCount: 1
 # -- Operator container image
 image:
   repository: quay.io/fitbeard/automation-platform/eda-server-operator
-  tag: 2.6-1794615097
+  tag: 2.7-1794591068.0
   pullPolicy: IfNotPresent
 
 # -- Pull secrets for private registries hosting the operator/EDA/EDA-UI images
@@ -34,8 +34,8 @@ leaderElection:
 #    chain so users can deploy an EDA CR without restating image fields.
 #    Empty string skips the env var (falls back to upstream-baked default).
 relatedImages:
-  eda: quay.io/fitbeard/automation-platform/eda-server:1.2.15
-  edaUi: quay.io/fitbeard/automation-platform/eda-ui:2.6.16
+  eda: quay.io/fitbeard/automation-platform/eda-server:1.3.15
+  edaUi: quay.io/fitbeard/automation-platform/eda-ui:2.7.14
   edaInitContainer: ""        # default: ubi9/ubi-minimal
   edaRedis: ""                # default: quay.io/sclorg/redis-6-c9s:c9s (NOTE: amd64-only —
                               #   no arm64 manifest; runs under emulation on arm64 hosts.
@@ -43,9 +43,11 @@ relatedImages:
   edaPostgres: ""             # default: quay.io/sclorg/postgresql-15-c9s
 
 # -- Optional kube-rbac-proxy sidecar exposing /metrics behind authn/authz.
-#    Disable on small / dev clusters to skip the extra container.
+#    Operator-sdk v1.40+ REMOVED kube-rbac-proxy upstream — the
+#    operator serves metrics with built-in auth. Default OFF; templates kept
+#    for anyone who still wants the external proxy pattern.
 kubeRbacProxy:
-  enabled: true
+  enabled: false
   image:
     repository: registry.k8s.io/kubebuilder/kube-rbac-proxy
     tag: v0.15.0

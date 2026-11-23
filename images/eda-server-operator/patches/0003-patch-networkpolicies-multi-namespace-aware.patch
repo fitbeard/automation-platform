@@ -1,0 +1,165 @@
+From 3877a6ff78a8c13209d8c56b15d5cb894b399829 Mon Sep 17 00:00:00 2001
+From: AAP Rebuild <aap-rebuild-bot@localhost>
+Date: Sun, 22 Nov 2026 00:59:58 +0200
+Subject: [PATCH] patch: make operand NetworkPolicies multi-namespace aware
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Added per-component NetworkPolicies (#362) whose cross-component 'from'
+rules use podSelector with NO namespaceSelector — which matches same-namespace
+pods ONLY. That breaks multi-namespace AAP deployments: the gateway reverse-proxy
+and operators (managed-by aap-operator / control-plane: controller-manager),
+when running in a different namespace than EDA, are denied ingress to eda-api /
+eda-ui / eda-event-stream (and postgres / db-management).
+
+Pair 'namespaceSelector: {}' with each such podSelector so the allowed AAP pods
+match across namespaces. Still restricted to the specific pod labels (operator /
+control-plane / app:eda) — only the same-namespace binding is lifted. 12 peers
+across eda-api, eda-ui, eda-event-stream, db-management, postgres templates.
+
+(Ingress from the ingress controller still uses the OpenShift ingress
+policy-group namespace labels; on vanilla k8s label the ingress namespace, e.g.
+network.openshift.io/policy-group=ingress on envoy-gateway-system.)
+---
+ roles/eda/templates/db-management.networkpolicy.yaml.j2  | 3 ++-
+ roles/eda/templates/eda-api.networkpolicy.yaml.j2        | 9 ++++++---
+ .../eda/templates/eda-event-stream.networkpolicy.yaml.j2 | 6 ++++--
+ roles/eda/templates/eda-ui.networkpolicy.yaml.j2         | 9 ++++++---
+ roles/postgres/templates/postgres.networkpolicy.yaml.j2  | 9 ++++++---
+ 5 files changed, 24 insertions(+), 12 deletions(-)
+
+diff --git a/roles/eda/templates/db-management.networkpolicy.yaml.j2 b/roles/eda/templates/db-management.networkpolicy.yaml.j2
+index 9f32ae8..28ec9d2 100644
+--- a/roles/eda/templates/db-management.networkpolicy.yaml.j2
++++ b/roles/eda/templates/db-management.networkpolicy.yaml.j2
+@@ -35,7 +35,8 @@ spec:
+     # Allow egress to managed PostgreSQL for pg_dump / pg_restore
+ {% if managed_database | bool %}
+     - to:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               app.kubernetes.io/component: database
+               app.kubernetes.io/instance: 'postgres-{{ supported_pg_version }}-{{ ansible_operator_meta.name }}'
+diff --git a/roles/eda/templates/eda-api.networkpolicy.yaml.j2 b/roles/eda/templates/eda-api.networkpolicy.yaml.j2
+index 1920fc0..8a7d767 100644
+--- a/roles/eda/templates/eda-api.networkpolicy.yaml.j2
++++ b/roles/eda/templates/eda-api.networkpolicy.yaml.j2
+@@ -31,14 +31,16 @@ spec:
+     # Allow traffic from the gateway operator (reverse proxy) and other AAP
+     # component pods that call the EDA API
+     - from:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchExpressions:
+               - key: app.kubernetes.io/managed-by
+                 operator: In
+                 values:
+                   - '{{ deployment_type }}-operator'
+                   - 'aap-operator'
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               control-plane: controller-manager
+       ports:
+@@ -51,7 +53,8 @@ spec:
+     # ansible_rulebook connects to daphne (websocket_port) for rulebook
+     # execution and to the API (api_nginx_port) for token refresh.
+     - from:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               app: eda
+       ports:
+diff --git a/roles/eda/templates/eda-event-stream.networkpolicy.yaml.j2 b/roles/eda/templates/eda-event-stream.networkpolicy.yaml.j2
+index c6fa185..f71dde1 100644
+--- a/roles/eda/templates/eda-event-stream.networkpolicy.yaml.j2
++++ b/roles/eda/templates/eda-event-stream.networkpolicy.yaml.j2
+@@ -31,14 +31,16 @@ spec:
+           port: {{ event_stream_nginx_port }}
+     # Allow traffic from the gateway operator and other EDA pods
+     - from:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchExpressions:
+               - key: app.kubernetes.io/managed-by
+                 operator: In
+                 values:
+                   - '{{ deployment_type }}-operator'
+                   - 'aap-operator'
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               control-plane: controller-manager
+       ports:
+diff --git a/roles/eda/templates/eda-ui.networkpolicy.yaml.j2 b/roles/eda/templates/eda-ui.networkpolicy.yaml.j2
+index 03e3c42..37fa163 100644
+--- a/roles/eda/templates/eda-ui.networkpolicy.yaml.j2
++++ b/roles/eda/templates/eda-ui.networkpolicy.yaml.j2
+@@ -31,14 +31,16 @@ spec:
+           port: 8080
+     # Allow traffic from the gateway operator (reverse proxy)
+     - from:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchExpressions:
+               - key: app.kubernetes.io/managed-by
+                 operator: In
+                 values:
+                   - '{{ deployment_type }}-operator'
+                   - 'aap-operator'
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               control-plane: controller-manager
+       ports:
+@@ -64,7 +66,8 @@ spec:
+           port: 53
+     # Allow egress to the EDA API pod (UI proxies API requests to the api pod)
+     - to:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               app.kubernetes.io/name: '{{ ansible_operator_meta.name }}'
+               app.kubernetes.io/managed-by: '{{ deployment_type }}-operator'
+diff --git a/roles/postgres/templates/postgres.networkpolicy.yaml.j2 b/roles/postgres/templates/postgres.networkpolicy.yaml.j2
+index 460ec02..fbe5a40 100644
+--- a/roles/postgres/templates/postgres.networkpolicy.yaml.j2
++++ b/roles/postgres/templates/postgres.networkpolicy.yaml.j2
+@@ -23,20 +23,23 @@ spec:
+     # Allow traffic from EDA operator-managed pods and the operator
+     # controller-manager (for DB initialization)
+     - from:
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchExpressions:
+               - key: app.kubernetes.io/managed-by
+                 operator: In
+                 values:
+                   - '{{ deployment_type }}-operator'
+                   - 'aap-operator'
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               control-plane: controller-manager
+         # EDA activation Job pods (created at runtime by activation workers,
+         # not operator-managed — carry only app: eda, no managed-by label).
+         # Event stream activations connect to Postgres via pg_notify.
+-        - podSelector:
++        - namespaceSelector: {}
++          podSelector:
+             matchLabels:
+               app: eda
+       ports:

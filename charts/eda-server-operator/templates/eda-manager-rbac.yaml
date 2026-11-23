@@ -1,4 +1,4 @@
-{{- $clusterScope := eq .Values.watchNamespace "" -}}
+{{- $clusterScope := or (eq .Values.watchNamespace "") (contains "," .Values.watchNamespace) -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: {{ if $clusterScope }}ClusterRole{{ else }}Role{{ end }}
 metadata:
@@ -33,7 +33,10 @@ rules:
       - rolebindings
     verbs: [get, list, create, delete, patch, update, watch]
   - apiGroups: [apps, networking.k8s.io]
-    resources: [deployments, daemonsets, replicasets, statefulsets, ingresses]
+    # networkpolicies: the  eda-server-operator baseline applies operand
+    # NetworkPolicies (upstream #362, skipped in 2.6) — mirror the operator
+    # role.yaml grant or reconcile 403s on the NetworkPolicy task (as awx did).
+    resources: [deployments, daemonsets, replicasets, statefulsets, ingresses, networkpolicies]
     verbs: [get, list, create, delete, patch, update, watch]
   - apiGroups: [apps]
     resources: [deployments/scale]

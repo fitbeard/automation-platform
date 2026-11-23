@@ -29,16 +29,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Pinned versions ---------------------------------------------------------
 
-GATEWAY_SRPM_URL="${GATEWAY_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-gateway-2.6.20261116-1.el9ap.src.rpm}"
-GATEWAY_TARBALL_GLOB="aap-gateway-*.tar.gz"
-GATEWAY_SRPM_DIR="${GATEWAY_SRPM_DIR:-${SCRIPT_DIR}/gateway-srpm}"
+# --- "-source" OCI source (BSI, Apache-2.0; replaces SRPM) ----------
+# The gateway "-source" wrapper bundles BOTH the gateway app (aap-gateway) AND
+# the shared platform UI (aap-ui, branch 2.7.14) as submodules at its root — one
+# extraction serves both. Pull it locally first (registry.redhat.io auth).
+# shellcheck source=extract-source-oci.sh
+. "${SCRIPT_DIR}/extract-source-oci.sh"
 
-AAP_UI_SRPM_URL="${AAP_UI_SRPM_URL:-https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.16-1.el9ap.src.rpm}"
-AAP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
-AAP_UI_SRPM_DIR="${AAP_UI_SRPM_DIR:-${SCRIPT_DIR}/aap-ui-srpm}"
+GATEWAY_SOURCE_IMAGE="${GATEWAY_SOURCE_IMAGE:-registry.redhat.io/ansible-automation-platform-27/gateway-rhel9:2.7.20261116-1794543629-source}"
+GATEWAY_SOURCE_SUBPATH="aap-gateway"
+AAP_UI_SOURCE_SUBPATH="aap-ui"
+GATEWAY_EXTRACT_DIR="${SCRIPT_DIR}/.src-gateway"
 AAP_UI_DIR="${AAP_UI_DIR:-${SCRIPT_DIR}/aap-ui}"
 
-VERSION="${VERSION:-2.6.20261116}"
+VERSION="${VERSION:-2.7.20261116}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/gateway}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/gateway-src}"
@@ -56,7 +60,7 @@ DAB_COMMIT="${DAB_COMMIT:-4f7889a86d6479217e81d99fc46dadd5ea763432}"
 
 # --- Pre-flight --------------------------------------------------------------
 
-for cmd in docker tar curl rpm2cpio cpio; do
+for cmd in docker tar; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: '$cmd' is required but not found in PATH."
         exit 1
@@ -87,7 +91,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-echo "=== AAP Gateway rebuild from SRPM (automation-gateway ${VERSION}) ==="
+echo "=== AAP Gateway rebuild from -source OCI (automation-gateway ${VERSION}) ==="
 echo "  Version:     ${VERSION}"
 echo "  Image:       ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "  DAB commit:  ${DAB_COMMIT}"
@@ -110,27 +114,24 @@ rm -rf "${BUILD_DIR}" "${AAP_UI_DIR}"
 echo ""
 
 # -------------------------------------------------------------------
-# 2. Download (if missing) + extract gateway SRPM
+# 2. Extract the gateway app (aap-gateway) from the "-source" OCI.
+#    The same wrapper also carries aap-ui (used in step 6).
 # -------------------------------------------------------------------
-echo "=> Preparing gateway source from SRPM..."
-mkdir -p "${GATEWAY_SRPM_DIR}"
-GATEWAY_SRPM_FILE="${GATEWAY_SRPM_DIR}/$(basename "${GATEWAY_SRPM_URL}")"
-if [ ! -f "${GATEWAY_SRPM_FILE}" ]; then
-    echo "   Downloading gateway SRPM..."
-    curl -fSL -o "${GATEWAY_SRPM_FILE}" "${GATEWAY_SRPM_URL}"
-fi
-# Always wipe other SRPM artifacts in this dir from prior versions
-find "${GATEWAY_SRPM_DIR}" -maxdepth 1 -name "${GATEWAY_TARBALL_GLOB}" -delete 2>/dev/null || true
-echo "   Extracting SRPM..."
-(cd "${GATEWAY_SRPM_DIR}" && rpm2cpio "${GATEWAY_SRPM_FILE}" | cpio -idm --quiet 2>/dev/null)
-GATEWAY_TARBALL=$(find "${GATEWAY_SRPM_DIR}" -maxdepth 1 -name "${GATEWAY_TARBALL_GLOB}" | head -1)
-if [ -z "${GATEWAY_TARBALL}" ]; then
-    echo "   ERROR: Could not find ${GATEWAY_TARBALL_GLOB} in extracted SRPM"
+echo "=> Extracting gateway source from ${GATEWAY_SOURCE_IMAGE##*/}..."
+GATEWAY_WRAPPER=$(extract_source_oci "${GATEWAY_SOURCE_IMAGE}" "${GATEWAY_EXTRACT_DIR}")
+# LICENSE GATE: the gateway app, platform UI, and bundled DAB all come from this
+# -source wrapper (no public gateway-app repo exists). Refuse to build a
+# distributable image unless each still ships an OSS LICENSE — catches a future
+# -source bump that drops or relicenses a tree. (Verified Apache-2.0 / MPL 2026-11-23.)
+assert_submodule_license "${GATEWAY_WRAPPER}" "${GATEWAY_SOURCE_SUBPATH}" "${AAP_UI_SOURCE_SUBPATH}" django-ansible-base
+GATEWAY_SRC="${GATEWAY_WRAPPER}/${GATEWAY_SOURCE_SUBPATH}"
+if [ ! -d "${GATEWAY_SRC}/aap_gateway_api" ]; then
+    echo "   ERROR: no aap_gateway_api tree at ${GATEWAY_SOURCE_SUBPATH} in the -source image"
     exit 1
 fi
-echo "   Found: $(basename "${GATEWAY_TARBALL}")"
 mkdir -p "${BUILD_DIR}"
-tar xzf "${GATEWAY_TARBALL}" -C "${BUILD_DIR}" --strip-components=1
+cp -a "${GATEWAY_SRC}/." "${BUILD_DIR}/"
+echo "   aap-gateway: $(find "${BUILD_DIR}/aap_gateway_api" -name '*.py' | wc -l | tr -d ' ') .py files"
 echo "   Done."
 echo ""
 
@@ -164,26 +165,19 @@ echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
-# 6. Download (if missing) + extract Platform UI SRPM
+# 6. Extract the Platform UI (aap-ui) from the SAME gateway "-source" wrapper.
+#    Strip the Cachi2-wired lockfiles so npm resolves from the public registry.
 # -------------------------------------------------------------------
-echo "=> Preparing Platform UI source from SRPM..."
-mkdir -p "${AAP_UI_SRPM_DIR}"
-UI_SRPM_FILE="${AAP_UI_SRPM_DIR}/$(basename "${AAP_UI_SRPM_URL}")"
-if [ ! -f "${UI_SRPM_FILE}" ]; then
-    echo "   Downloading AAP UI SRPM..."
-    curl -fSL -o "${UI_SRPM_FILE}" "${AAP_UI_SRPM_URL}"
-fi
-find "${AAP_UI_SRPM_DIR}" -maxdepth 1 -name "${AAP_UI_TARBALL_GLOB}" -delete 2>/dev/null || true
-echo "   Extracting SRPM..."
-(cd "${AAP_UI_SRPM_DIR}" && rpm2cpio "${UI_SRPM_FILE}" | cpio -idm --quiet 2>/dev/null)
-UI_TARBALL=$(find "${AAP_UI_SRPM_DIR}" -maxdepth 1 -name "${AAP_UI_TARBALL_GLOB}" | head -1)
-if [ -z "${UI_TARBALL}" ]; then
-    echo "   ERROR: Could not find ${AAP_UI_TARBALL_GLOB} in extracted SRPM"
+echo "=> Preparing Platform UI source from the gateway -source wrapper..."
+AAP_UI_SRC="${GATEWAY_WRAPPER}/${AAP_UI_SOURCE_SUBPATH}"
+if [ ! -d "${AAP_UI_SRC}/platform" ]; then
+    echo "   ERROR: no aap-ui/platform at ${AAP_UI_SOURCE_SUBPATH} in the gateway -source"
     exit 1
 fi
-echo "   Found: $(basename "${UI_TARBALL}")"
-mkdir -p "${AAP_UI_DIR}"
-tar xzf "${UI_TARBALL}" -C "${AAP_UI_DIR}" --strip-components=1
+rm -rf "${AAP_UI_DIR}"; mkdir -p "${AAP_UI_DIR}"
+cp -a "${AAP_UI_SRC}/." "${AAP_UI_DIR}/"
+find "${AAP_UI_DIR}" -name 'package-lock.json' -not -path '*/node_modules/*' -delete
+echo "   aap-ui: stripped Cachi2 lockfiles (will resolve from public npm)"
 echo "   Done."
 echo ""
 
@@ -221,26 +215,40 @@ VENDOR_SLUG="$(printf '%s' "${VENDOR}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
 VENDOR_USCORE="$(printf '%s' "${VENDOR}" | tr ' ' '_')"                            # spaces -> underscores
 echo "   (derived vendor token: ${#VENDOR} chars)"
 
-# 8a. Replace and rename logo/icon SVG assets (aap-* → ap-*, vendor icon → community-*)
-cp "${DEBRAND_DIR}/ap-logo.svg"        "${PLATFORM_DIR}/assets/ap-logo.svg"
-cp "${DEBRAND_DIR}/ap-logo-white.svg"  "${PLATFORM_DIR}/assets/ap-logo-white.svg"
-cp "${DEBRAND_DIR}/community-icon.svg" "${PLATFORM_DIR}/assets/community-icon.svg"
-# public/ files are served as-is by Vite (no hash) — needed for runtime URL references
-cp "${DEBRAND_DIR}/ap-logo.svg"        "${PLATFORM_DIR}/public/ap-logo.svg"
-cp "${DEBRAND_DIR}/ap-logo-white.svg"  "${PLATFORM_DIR}/public/ap-logo-white.svg"
-cp "${DEBRAND_DIR}/community-icon.svg" "${PLATFORM_DIR}/public/community-icon.svg"
-# Remove old-named files so they don't end up in the build
-rm -f "${PLATFORM_DIR}/assets/aap-logo.svg" "${PLATFORM_DIR}/assets/aap-logo-white.svg" "${PLATFORM_DIR}/assets/${VENDOR_SLUG}-icon.svg"
-rm -f "${PLATFORM_DIR}/public/aap-logo.svg" "${PLATFORM_DIR}/public/${VENDOR_SLUG}-icon.svg"
+# 8a. Overwrite the platform brand assets IN PLACE with debranded ones.
+# Renamed the "aap-logo.svg" set to platform-logo*.svg + platform-icon.svg
+# (masthead imports platform-logo.svg + platform-icon.svg; login imports
+# platform-logo-login.svg; About + favicon reference them by URL). Overwriting the
+# files keeps every import/URL working with no source edits — no rename needed.
+#   - platform-logo.svg (masthead, ?react inline): currentColor -> adapts to theme
+#   - platform-logo-login.svg (login, forced color:white): currentColor renders white
+#   - platform-logo-white.svg (dark-theme <img>): explicit white
+#   - platform-icon.svg (collapsed nav + favicon): neutral community icon
+for sub in assets public; do
+    dir="${PLATFORM_DIR}/${sub}"
+    [ -f "${dir}/platform-logo.svg" ]       && cp "${DEBRAND_DIR}/ap-logo.svg"        "${dir}/platform-logo.svg"
+    [ -f "${dir}/platform-logo-white.svg" ] && cp "${DEBRAND_DIR}/ap-logo-white.svg"  "${dir}/platform-logo-white.svg"
+    [ -f "${dir}/platform-logo-login.svg" ] && cp "${DEBRAND_DIR}/ap-logo.svg"        "${dir}/platform-logo-login.svg"
+    [ -f "${dir}/platform-icon.svg" ]       && cp "${DEBRAND_DIR}/community-icon.svg" "${dir}/platform-icon.svg"
+done
+# About modal uses <img src> (currentColor does NOT apply to <img>), so dark theme
+# needs an explicitly-white asset served from public/.
+cp "${DEBRAND_DIR}/ap-logo-white.svg" "${PLATFORM_DIR}/public/platform-logo-white.svg"
 
-# 8b. PlatformMasthead.tsx — rename imports, remove icon, fix docs link
-sedi "s|from '../assets/aap-logo.svg?react'|from '../assets/ap-logo.svg?react'|" \
-    "${PLATFORM_DIR}/main/PlatformMasthead.tsx"
-# Drop the vendor icon import + its <…Icon .../> usage (matched structurally on
-# the assets/*-icon.svg?react import and the exact 38x38 dimensions).
-sedi -E "s|import ${VENDOR_CAMEL}Icon from '\.\./assets/${VENDOR_SLUG}-icon\.svg\?react';|// vendor icon import removed (debranded)|" \
-    "${PLATFORM_DIR}/main/PlatformMasthead.tsx"
-sedi -E "s|\{!isSmOrLarger && <${VENDOR_CAMEL}Icon style=\{\{ height: 38, width: 38 \}\} />\}||" \
+# 8b. PlatformMasthead.tsx — pair the community icon with the masthead wordmark +
+# repoint the vendor docs link. The logo (platform-logo.svg) and collapsed icon
+# (platform-icon.svg) assets are handled by the 8a overwrite; PlatformIcon is already
+# imported, so we just wrap the expanded wordmark with it (parity with the login and
+# with the vendor lockup, which pairs an icon with the product name).
+# Render the masthead brand as the community icon + an HTML text wordmark (explicit
+# font-size). Two reasons we don't reuse the SVG/?react here:
+#   - the wide 1-line SVG wordmark was width-constrained by MastheadLogo -> tiny, so
+#     HTML text (not width-scaled) gives a controlled, readable size;
+#   - the ?react/svgr icon import strips the SVG's fill colors (themed via
+#     currentColor) -> the community icon vanished against the masthead, so we point
+#     an <img> at the served /platform-icon.svg (colors intact, no svgr).
+# ("Automation Platform" is our neutral product name.)
+sedi "s|<PlatformLogo style={{ height: 48 }} />|<span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><img src=\"/platform-icon.svg\" alt=\"\" style={{ height: 30, width: 30 }} /><span style={{ fontSize: '22px', fontWeight: 600, whiteSpace: 'nowrap' }}>Automation Platform</span></span>|" \
     "${PLATFORM_DIR}/main/PlatformMasthead.tsx"
 # Repoint the docs link (matched structurally on any access.<host>.com/documentation URL).
 # Exclude the template-literal/JSX terminators (backtick, } ) from the char class so the
@@ -285,7 +293,7 @@ export const PlatformAbout: React.FunctionComponent<{
       trademark={`${new Date().getFullYear()}`}
       brandImageAlt={t('Brand Logo')}
       brandImageSrc={
-        settings?.activeTheme === 'dark' ? '/ap-logo-white.svg' : '/ap-logo.svg'
+        settings?.activeTheme === 'dark' ? '/platform-logo-white.svg' : '/platform-logo.svg'
       }
     >
       <Content>
@@ -321,20 +329,21 @@ export const PlatformAbout: React.FunctionComponent<{
 };
 ABOUT_TSX
 
-# 8d. PlatformLogin.tsx — rename import, add community icon, change alt text
-sedi "s|from '../assets/aap-logo.svg?react'|from '../assets/ap-logo.svg?react'|" \
-    "${PLATFORM_DIR}/main/PlatformLogin.tsx"
-sedi "s|from '../assets/ap-logo.svg?react';|from '../assets/ap-logo.svg?react';\nimport CommunityIcon from '../assets/community-icon.svg?react';|" \
-    "${PLATFORM_DIR}/main/PlatformLogin.tsx"
-sedi "s|<AAPLogo style={{ height: 64, color: 'white' }} />|<span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CommunityIcon style={{ height: 52, width: 52 }} /><AAPLogo style={{ height: 64, color: 'white' }} /></span>|" \
+# 8d. PlatformLogin.tsx — pair a neutral community icon with the login wordmark
+# (our 8a overwrite left the login showing only the "Automation Platform" text).
+# Use an <img> pointing at the served /platform-icon.svg (community icon after 8a)
+# rather than a ?react import: svgr strips the SVG fill colors (themed via
+# currentColor) and the icon disappears, whereas <img> keeps the file's own colors.
+# Also debrand the brand-image alt text.
+sedi "s|<Logo style={{ color: 'white' }} />|<span style={{ display: 'flex', alignItems: 'center', gap: '20px' }}><img src=\"/platform-icon.svg\" alt=\"\" style={{ height: 64, width: 64 }} /><Logo style={{ color: 'white' }} /></span>|" \
     "${PLATFORM_DIR}/main/PlatformLogin.tsx"
 sedi "s|process.env.PRODUCT as unknown as string|'Automation Platform'|" \
     "${PLATFORM_DIR}/main/PlatformLogin.tsx"
 
-# 8e. index.html — title and favicon reference
-sedi "s|href=\"/${VENDOR_SLUG}-icon.svg\"|href=\"/community-icon.svg\"|" \
-    "${PLATFORM_DIR}/index.html"
-sedi 's|<meta charset="UTF-8" />|<meta charset="UTF-8" />\n    <title>Automation Platform</title>|' \
+# 8e. index.html — debrand the <title> (structural product-name collapse). The
+# favicon reference (href="/platform-icon.svg") is left as-is; 8a overwrites that
+# asset file with the neutral community icon.
+sedi -E 's|<title>([A-Z][a-z]+ )+Automation Platform</title>|<title>Automation Platform</title>|' \
     "${PLATFORM_DIR}/index.html"
 
 # Product-name normalizer: collapse a run of leading Capitalized brand words

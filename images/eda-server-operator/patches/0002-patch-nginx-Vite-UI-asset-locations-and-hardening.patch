@@ -1,37 +1,23 @@
-From 18df889e7b33676b89fae2b3ad6270d73b1c0433 Mon Sep 17 00:00:00 2001
+From 8f85356f3e2b7f50791a1c896d19a3f57466037c Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
-Date: Mon, 4 May 2026 19:19:17 +0300
+Date: Sun, 22 Nov 2026 00:43:33 +0200
 Subject: [PATCH] patch: nginx Vite UI asset locations and hardening
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-Three changes to the eda-ui pod's nginx configmap (nginx_default_conf_template):
-
-1. Logo rewrite — the UI emits /assets/eda-logo.svg as an absolute path
-   but the file ships at /eda-logo.svg in the eda-ui image. Without the
-   rewrite, the login masthead and About modal logo render broken.
-
-2. Gateway-API rewrite — the UI shared components (Team Access, User
-   Access) hardcode the gatewayAPI helper which calls /api/gateway/v1/*.
-   In standalone mode (no AAP gateway/platform-UI in front) those DAB
-   endpoints live at /api/eda/v1/*, so rewrite + proxy. Gated on
-   'not ui_disabled' because when ui_disabled=true the platform-UI is
-   in front and serves /api/gateway/v1/* itself.
-
-3. Server-level security headers — X-Frame-Options DENY +
-   X-Content-Type-Options nosniff (matches the AWX operator nginx
-   configmap). HSTS deliberately omitted — needs TLS termination at
-   the eda-ui nginx layer, which the operator default doesn't provide.
+Re-authored for eda-server-operator baseline (devel HEAD): the
+eda-ui nginx configmap moved access_log to http-level, so the 2.6 anchors
+shifted. Adds (eda-ui pod nginx): server-level security headers
+(X-Frame-Options DENY, X-Content-Type-Options nosniff); /assets/eda-logo.svg
+-> /eda-logo.svg rewrite; and a standalone /api/gateway/v1/* -> /api/eda/v1/*
+rewrite gated on 'not ui_disabled'.
 ---
- roles/eda/templates/eda.configmap.yaml.j2 | 31 +++++++++++++++++++++++
- 1 file changed, 31 insertions(+)
+ roles/eda/templates/eda.configmap.yaml.j2 | 26 +++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
 
 diff --git a/roles/eda/templates/eda.configmap.yaml.j2 b/roles/eda/templates/eda.configmap.yaml.j2
-index e6bd5c9..0b5ef7e 100644
+index a292455..5a93157 100644
 --- a/roles/eda/templates/eda.configmap.yaml.j2
 +++ b/roles/eda/templates/eda.configmap.yaml.j2
-@@ -71,6 +71,10 @@ data:
+@@ -101,6 +101,10 @@ data:
              server_name _;
              server_tokens off;
  
@@ -39,30 +25,25 @@ index e6bd5c9..0b5ef7e 100644
 +            add_header X-Frame-Options "DENY" always;
 +            add_header X-Content-Type-Options "nosniff" always;
 +
-             access_log off;
-             # error_log off;
+             autoindex off;
  
-@@ -85,6 +89,33 @@ data:
+             include mime.types;
+@@ -112,6 +116,28 @@ data:
  
              root /usr/share/nginx/html;
  
 +            # Vite UI emits /assets/eda-logo.svg as an absolute path but the
-+            # file ships at /eda-logo.svg in the eda-ui image. Rewrite so
-+            # the login masthead / About modal logo render.
++            # file ships at /eda-logo.svg in the eda-ui image. Rewrite so the
++            # login masthead / About modal logo render.
 +            location = /assets/eda-logo.svg {
 +                rewrite ^ /eda-logo.svg last;
 +            }
 +
 +            {% if not ui_disabled %}
-+            # Standalone mode (no gateway in front): the EDA UI's shared
-+            # components (Team Access, User Access) hardcode the gatewayAPI
-+            # helper which calls /api/gateway/v1/role_team_assignments,
-+            # /api/gateway/v1/role_definitions, etc. In standalone these
-+            # DAB endpoints live at /api/eda/v1/*, so rewrite + proxy.
-+            #
-+            # Gated on `not ui_disabled` because when ui_disabled=true the
-+            # AAP platform-UI/gateway is fronting EDA and serves these
-+            # endpoints itself — rewrite would be wrong in that case.
++            # Standalone (no gateway in front): the EDA UI's shared Access
++            # components call /api/gateway/v1/* which in standalone live at
++            # /api/eda/v1/*. Rewrite + proxy. Gated on `not ui_disabled` (when
++            # ui_disabled the platform-UI/gateway fronts EDA and serves these).
 +            location ~ ^/api/gateway/v1/(.*)$ {
 +                rewrite ^/api/gateway/v1/(.*)$ /api/eda/v1/$1 break;
 +                proxy_pass http://{{ api_server_name }}:{{ api_nginx_port }};

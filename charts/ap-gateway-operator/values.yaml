@@ -37,15 +37,17 @@ leaderElection:
 #    chain so users can deploy an AAP CR without restating image fields.
 #    Empty string skips the env var (falls back to upstream-baked default).
 relatedImages:
-  gateway: quay.io/fitbeard/automation-platform/gateway:2.6.20261116
-  gatewayProxy: docker.io/envoyproxy/envoy:v1.34-latest
+  gateway: quay.io/fitbeard/automation-platform/gateway:2.7.20261116
+  #  gateway-proxy targets envoy v1.36 (the gateway's envoy config is
+  # written for v1.36.x; vendor builds from istio-proxyv2 1.31.x, we use stock).
+  gatewayProxy: docker.io/envoyproxy/envoy:v1.36-latest
   gatewayPostgres: quay.io/sclorg/postgresql-15-c9s:latest
   gatewayRedis: quay.io/sclorg/redis-6-c9s:c9s
 
 # -- Optional kube-rbac-proxy sidecar exposing /metrics behind authn/authz.
 #    Disable on small / dev clusters to skip the extra container.
 kubeRbacProxy:
-  enabled: true
+  enabled: false
   image:
     repository: registry.k8s.io/kubebuilder/kube-rbac-proxy
     tag: v0.15.0
