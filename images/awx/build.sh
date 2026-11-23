@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 #
 #
-# Why SRPM and not upstream git clone:
-#   automation-controller 4.7.10 ships commit 9594d03dd537 from a PRIVATE
-#   stable-2.6 branch — `git fetch origin 9594d03d` against ansible/awx
-#   returns "not our ref". The public ansible/awx has no stable-* branches.
-#   Delta from public 4.7.8 is 226 modified + 20 new files (dispatcherd
-#   rewrite, indirect node counting, ~50 dep bumps) — too large to cherry-
-#   pick by hand. SRPM tarball is the only transparent route.
+# Why the vendor "-source" OCI and not upstream git clone:
+#   automation-controller 4.8.14 ships commit 463c7e64 from a non-public
+#   vendor branch — the materialized awx tree diverges from public ansible/awx
+#   devel by ~162 files at the cut date (downstream security guards, cache.py,
+#   a metrics-utility migration), so it is NOT a clean public pull.
 #
-#   SRPM is public on the vendor FTP, Apache-2.0, %prep has ZERO %patchN or
-#   git apply directives — the tarball IS the complete source.
+#   No longer publishes SRPMs — the only source channel is the per-
+#   component build-source-image (BSI) "-source" OCI. Inside it, the Konflux
+#   build-wrapper carries the private submodules MATERIALIZED at sources/tower
+#   (the complete awx source, Apache-2.0 — verified byte-identical to the code
+#   shipped in the runtime image, minus tests). Extracting that tree is the
+#   direct replacement for the old SRPM tarball (see extract-source-oci.sh).
 #
-#   UI source (aap-ui) lives in a non-public vendor source tree
-#   (aap-ui) — SRPM is mandatory there regardless.
+#   UI source (aap-ui, the shared @ansible/ui SPA) is bundled as a submodule in
+#   the gateway "-source"; the controller "-source" has none (AAP 2.5+ ships a
+#   headless controller). We keep a standalone UI, so we pull aap-ui from the
+#   gateway "-source" and build+serve it as in the 2.6 image.
 #
 # Usage:
 #   ./build.sh                                     # Build for local platform
@@ -21,22 +25,36 @@
 #   ./build.sh --push                              # Build multiarch (amd64+arm64) and push
 #   ./build.sh --no-cache                          # Force full rebuild (no Docker cache)
 #   PLATFORMS=linux/amd64 ./build.sh --push        # Push single arch to registry
-#   VERSION=26.0.0 ./build.sh                      # Override image tag
+#   VERSION=27.0.0 ./build.sh                      # Override image tag
+#
+# Prereq: the two "-source" images must be pulled locally first (needs
+# registry.redhat.io auth):
+#   docker pull registry.redhat.io/ansible-automation-platform-27/controller-rhel9:4.8.14-1794542126-source
+#   docker pull registry.redhat.io/ansible-automation-platform-27/gateway-rhel9:2.7.20261116-1794543629-source
 #
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# --- SRPM sources (public FTP, Apache-2.0) -----------------------------------
+# --- "-source" OCI sources (BSI, Apache-2.0; replaces SRPM) ---------
+# Pull these locally first (see header). Override with env for a newer cut.
 
-AWX_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-controller-4.7.20-1.el9ap.src.rpm"
-AWX_SRPM_DIR="${SCRIPT_DIR}/awx-srpm"
-AWX_TARBALL_GLOB="automation-controller-*.tar.gz"
+# shellcheck source=extract-source-oci.sh
+. "${SCRIPT_DIR}/extract-source-oci.sh"
 
-AAP_UI_SRPM_URL="https://ftp.redhat.com/redhat/linux/enterprise/9Base/en/AnsibleAutomationPlatform/SRPMS/automation-platform-ui-2.6.16-1.el9ap.src.rpm"
-AAP_UI_SRPM_DIR="${SCRIPT_DIR}/aap-ui-srpm"
-AAP_UI_TARBALL_GLOB="aap-ui-*.tar.gz"
+# Controller app source: materialized awx tree lives at <wrapper>/sources/tower
+AWX_SOURCE_IMAGE="${AWX_SOURCE_IMAGE:-registry.redhat.io/ansible-automation-platform-27/controller-rhel9:4.8.14-1794542126-source}"
+AWX_SOURCE_SUBPATH="sources/tower"
+
+# Shared platform UI (@ansible/ui): bundled only in the gateway "-source", at
+# <wrapper>/aap-ui. The controller "-source" ships no UI (headless since 2.5+).
+AAP_UI_SOURCE_IMAGE="${AAP_UI_SOURCE_IMAGE:-registry.redhat.io/ansible-automation-platform-27/gateway-rhel9:2.7.20261116-1794543629-source}"
+AAP_UI_SOURCE_SUBPATH="aap-ui"
+
+# Scratch dirs for the two extractions (wiped each run).
+AWX_EXTRACT_DIR="${SCRIPT_DIR}/.src-controller"
+AAP_UI_EXTRACT_DIR="${SCRIPT_DIR}/.src-gateway"
 
 # --- Public git refs we still use --------------------------------------------
 
@@ -44,24 +62,23 @@ AWX_LOGOS_REPO="https://github.com/ansible/awx-logos.git"
 AWX_LOGOS_COMMIT="bae4e6cfd16f5e7b814ed873a2fef68b6d90a354"
 AWX_LOGOS_DIR="${AWX_LOGOS_DIR:-${SCRIPT_DIR}/awx-logos}"
 
-# DAB commit on public ansible/django-ansible-base — devel commit nearest the
-# AAP 2.6.20261116 SRPM cut (controller 4.7.20 was cut 2026-11-09; the gateway/UI
-# SRPMs in the same wave are cut 2026-11-16). 4f7889a8 was committed
-# 2026-11-12T20:38Z ("[AAP-102150] Update python cryptography") — the closest
-# publicly-reachable devel point that spans the whole wave and matches the SRPM's
-# cryptography 46.0.7 bump. The 4.7.20 SRPM ships the vendored stable-2.6 DAB
-# `91ccee049049` (version 2.6.20261116, NOT on public github); we chase public
-# devel-on-the-cut-date instead, kept in parity across AWX/EDA/gateway for
-# JWT/resource-server interop. AWX references no new DAB symbols across these
-# patch bumps, so the public-only chain resolves.
+# DAB commit on public ansible/django-ansible-base — devel commit nearest
+# cut. The controller "-source" vendors DAB at branch 2.7.20261116
+# (non-public); the nearest public devel commit on/before 2026-11-16 is
+# 4f7889a8 ("[AAP-102150] Update python cryptography", 2026-11-12) — no public
+# devel commits landed in the 11-12..11-16 window, so this is the exact nearest
+# point (and the same pin the 2.6 wave used, keeping JWT/resource-server parity
+# across AWX/EDA/gateway). We chase public devel rather than vendoring the exact
+# tree to keep the chain public; the -source DAB tree is Apache-2.0 and could be
+# vendored instead if an exact pin is ever required.
 DAB_COMMIT="4f7889a86d6479217e81d99fc46dadd5ea763432"
 
 # --- Image configuration -----------------------------------------------------
 
-# Clean version scheme for the SRPM-based rebuild, kept inside the AAP 2.6 line:
-# 25.0.0 = controller 4.7.11, 26.0.0 = controller 4.7.16, 26.1.0 = controller
-# 4.7.20 refresh (minor bump — still AAP 2.6, not a major).
-VERSION="${VERSION:-26.1.0}"
+# Version scheme tracks the awx major per AAP line: 25.x = controller
+# 4.7.11, 26.x = controller 4.7.16/4.7.20. controller 4.8.14
+# → 27.0.0 (new AP minor = new awx major).
+VERSION="${VERSION:-27.0.0}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/awx}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 
@@ -70,19 +87,15 @@ AAP_UI_DIR="${AAP_UI_DIR:-${SCRIPT_DIR}/aap-ui}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="awx-multiarch"
 
-# DAB setuptools_scm pretend version. DAB commit 4f7889a8 is dated 2026-11-12
-# on public devel; we use the commit-date pseudo-version to keep it monotonic
-# with the SRPM cut date.
-DAB_PRETEND_VERSION="${DAB_PRETEND_VERSION:-2.6.20261112}"
+# DAB setuptools_scm pretend version. Matches the vendored DAB branch date for
+# cut (2.7.20261116); DAB commit 4f7889a8 is the nearest public devel.
+DAB_PRETEND_VERSION="${DAB_PRETEND_VERSION:-2.7.20261116}"
 
 # --- Pre-flight --------------------------------------------------------------
 
-for cmd in git curl docker rpm2cpio cpio tar python3; do
+for cmd in git docker tar python3; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: '$cmd' is required but not found in PATH."
-        echo "  On macOS: brew install rpm2cpio"
-        echo "  On Debian/Ubuntu: apt install rpm2cpio cpio"
-        echo "  On RHEL/Fedora: dnf install rpm cpio"
         exit 1
     fi
 done
@@ -104,9 +117,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-echo "=== AWX Rebuild from AAP SRPM (controller 4.7.20) ==="
-echo "  SRPM:      automation-controller-4.7.20-1.el9ap.src.rpm"
-echo "  UI SRPM:   automation-platform-ui-2.6.16-1.el9ap.src.rpm"
+echo "=== AWX Rebuild from -source OCI (controller 4.8.14) ==="
+echo "  Source:    ${AWX_SOURCE_IMAGE##*/}"
+echo "  UI source: ${AAP_UI_SOURCE_IMAGE##*/}"
 echo "  Version:   ${VERSION}"
 echo "  Image:     ${IMAGE_NAME}:${IMAGE_TAG}"
 if [ "${PUSH}" = true ]; then
@@ -122,56 +135,58 @@ echo ""
 
 # -------------------------------------------------------------------
 # Always start fresh: wipe extracted trees so patches apply cleanly.
-# The downloaded .src.rpm files are kept to avoid re-downloading 140 MB.
 # -------------------------------------------------------------------
 echo "=> Wiping extracted trees for a fresh start"
 rm -rf "${BUILD_DIR}" "${AAP_UI_DIR}"
 echo ""
 
 # -------------------------------------------------------------------
-# 1. Download (if missing) + extract AWX SRPM
+# 1. Extract the controller (awx) source from the "-source" OCI.
+#    <wrapper>/sources/tower is the complete awx tree (Apache-2.0),
+#    the direct replacement for the old SRPM tarball.
 # -------------------------------------------------------------------
-mkdir -p "${AWX_SRPM_DIR}"
-AWX_SRPM_FILE="${AWX_SRPM_DIR}/$(basename "${AWX_SRPM_URL}")"
-if [ ! -f "${AWX_SRPM_FILE}" ]; then
-    echo "=> Downloading AWX SRPM (140 MB)..."
-    curl -fSL -o "${AWX_SRPM_FILE}" "${AWX_SRPM_URL}"
-fi
-echo "=> Extracting AWX SRPM..."
-# Clear any old tarballs from prior versions so the glob below matches one file
-find "${AWX_SRPM_DIR}" -maxdepth 1 -type f ! -name '*.src.rpm' -delete
-(cd "${AWX_SRPM_DIR}" && rpm2cpio "${AWX_SRPM_FILE}" | cpio -idm --quiet 2>/dev/null)
-AWX_TARBALL=$(ls ${AWX_SRPM_DIR}/${AWX_TARBALL_GLOB} 2>/dev/null | head -1)
-if [ -z "${AWX_TARBALL}" ]; then
-    echo "   ERROR: Could not find ${AWX_TARBALL_GLOB} in SRPM contents"
+echo "=> Extracting controller source from ${AWX_SOURCE_IMAGE##*/}..."
+AWX_WRAPPER=$(extract_source_oci "${AWX_SOURCE_IMAGE}" "${AWX_EXTRACT_DIR}")
+# LICENSE GATE: refuse to build a distributable image unless the materialized
+# controller (awx) tree still ships an OSS LICENSE (see extract-source-oci.sh) —
+# catches a future -source bump that drops or relicenses it.
+assert_submodule_license "${AWX_WRAPPER}" "${AWX_SOURCE_SUBPATH}"
+AWX_TOWER="${AWX_WRAPPER}/${AWX_SOURCE_SUBPATH}"
+if [ ! -d "${AWX_TOWER}/awx" ]; then
+    echo "   ERROR: no awx tree at ${AWX_SOURCE_SUBPATH} in the -source image"
     exit 1
 fi
-echo "   Found: $(basename "${AWX_TARBALL}")"
 mkdir -p "${BUILD_DIR}"
-tar xzf "${AWX_TARBALL}" -C "${BUILD_DIR}" --strip-components=1
+# Copy the materialized tree into the build dir (it has no .git).
+cp -a "${AWX_TOWER}/." "${BUILD_DIR}/"
+echo "   awx source: $(find "${BUILD_DIR}/awx" -name '*.py' | wc -l | tr -d ' ') .py files"
 echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
-# 2. Download (if missing) + extract UI SRPM
+# 2. Extract the shared platform UI (aap-ui) from the gateway "-source".
+#    The controller "-source" ships no UI (headless since AAP 2.5+); we keep
+#    a standalone UI, so aap-ui comes from the gateway wrapper's submodule.
 # -------------------------------------------------------------------
-mkdir -p "${AAP_UI_SRPM_DIR}"
-UI_SRPM_FILE="${AAP_UI_SRPM_DIR}/$(basename "${AAP_UI_SRPM_URL}")"
-if [ ! -f "${UI_SRPM_FILE}" ]; then
-    echo "=> Downloading UI SRPM..."
-    curl -fSL -o "${UI_SRPM_FILE}" "${AAP_UI_SRPM_URL}"
-fi
-echo "=> Extracting UI SRPM..."
-find "${AAP_UI_SRPM_DIR}" -maxdepth 1 -type f ! -name '*.src.rpm' -delete
-(cd "${AAP_UI_SRPM_DIR}" && rpm2cpio "${UI_SRPM_FILE}" | cpio -idm --quiet 2>/dev/null)
-UI_TARBALL=$(ls ${AAP_UI_SRPM_DIR}/${AAP_UI_TARBALL_GLOB} 2>/dev/null | head -1)
-if [ -z "${UI_TARBALL}" ]; then
-    echo "   ERROR: Could not find ${AAP_UI_TARBALL_GLOB} in SRPM contents"
+echo "=> Extracting aap-ui from ${AAP_UI_SOURCE_IMAGE##*/}..."
+AAP_UI_WRAPPER=$(extract_source_oci "${AAP_UI_SOURCE_IMAGE}" "${AAP_UI_EXTRACT_DIR}")
+# LICENSE GATE: the standalone UI comes from the gateway -source wrapper; assert
+# its OSS LICENSE before bundling it into a distributable image.
+assert_submodule_license "${AAP_UI_WRAPPER}" "${AAP_UI_SOURCE_SUBPATH}"
+AAP_UI_SRC="${AAP_UI_WRAPPER}/${AAP_UI_SOURCE_SUBPATH}"
+if [ ! -d "${AAP_UI_SRC}/frontend" ]; then
+    echo "   ERROR: no aap-ui frontend at ${AAP_UI_SOURCE_SUBPATH} in the gateway -source"
     exit 1
 fi
-echo "   Found: $(basename "${UI_TARBALL}")"
 mkdir -p "${AAP_UI_DIR}"
-tar xzf "${UI_TARBALL}" -C "${AAP_UI_DIR}" --strip-components=1
+cp -a "${AAP_UI_SRC}/." "${AAP_UI_DIR}/"
+# The vendor's package-lock.json pins every tarball to the Konflux hermetic
+# Cachi2 offline cache (`file:///cachi2/output/deps/npm/...`), which does not
+# exist outside their build. Drop the lockfiles so the Docker build resolves
+# from the PUBLIC npm registry at the versions package.json specifies. The
+# `.npmrc` supply-chain guards (ignore-scripts, min-release-age=7) are kept.
+find "${AAP_UI_DIR}" -name 'package-lock.json' -not -path '*/node_modules/*' -delete
+echo "   aap-ui: stripped Cachi2 lockfiles (will resolve from public npm)"
 echo "   Done."
 echo ""
 
@@ -191,20 +206,25 @@ echo ""
 cd "${BUILD_DIR}"
 
 # -------------------------------------------------------------------
-# 4. Rewrite requirements_git.txt — replace private SSH/branch refs
-#    with public HTTPS commit pins.
+# 4. Rewrite requirements_git.txt — replace private SSH/branch refs with public
+#    HTTPS commit pins.
 #
-#    Upstream 4.7.10 ships:
-#      certifi @ git+https://github.com/ansible/system-certifi.git@devel
-#      django-ansible-base @ git+ssh://git@github.com/ansible-automation-platform/django-ansible-base@stable-2.6
-#
-#    Replace with public HTTPS + pinned commits (same commits ships
-#    as source tarballs in the SRPM).
+#    The 4.8.14 controller source ships FOUR git deps (2.7 added the awx-plugins
+#    split as git refs):
+#      certifi             @ git+https://github.com/ansible/system-certifi.git@devel
+#      django-ansible-base @ git+ssh://.../ansible-automation-platform/django-ansible-base@stable-2.7   (non-public)
+#      awx-plugins-core    @ git+https://github.com/ansible/awx-plugins.git@devel                       (public)
+#      awx-plugins-interfaces @ git+https://github.com/ansible/awx_plugins.interfaces.git               (public)
+#    Only DAB is non-public (we pin public devel nearest the cut). The other
+#    three are already public; we pin them to public commits nearest 2026-11-16
+#    for reproducibility (awx-plugins-core/interfaces @ 2026-11-14).
 # -------------------------------------------------------------------
 echo "=> Rewriting requirements_git.txt to public HTTPS pins..."
 cat > requirements/requirements_git.txt << REQUIREMENTS_GIT
 certifi @ git+https://github.com/ansible/system-certifi.git@5aa52ab91f9d579bfe52b5acf30ca799f1a563d9
 django-ansible-base[feature-flags,jwt-consumer,rbac,resource-registry,rest-filters] @ git+https://github.com/ansible/django-ansible-base.git@${DAB_COMMIT}
+awx-plugins-core[credentials-github-app] @ git+https://github.com/ansible/awx-plugins.git@4332fe3012b6317f680cd35e381e646058d7cfc2
+awx-plugins-interfaces @ git+https://github.com/ansible/awx_plugins.interfaces.git@a36102ff9a42ac3ebc3fe489cc65c4cc619a46bd
 REQUIREMENTS_GIT
 # Clear any leaked credentials file
 : > requirements/requirements_git.credentials.txt
@@ -214,79 +234,62 @@ echo ""
 # -------------------------------------------------------------------
 # 5. CVE bumps on pinned deps.
 #
-#    RESET 2026-11 (4.7.20 wave): all prior per-dep overrides were removed
-#    first, then a clean 4.7.20 image was scanned with `docker scout cves`.
-#    The 4.7.20 SRPM already carries every fix we used to force last wave —
-#    gitpython 3.2.1 (was sed 3.1.59), django 5.2.17 (was 5.2.13), sqlparse
-#    0.6.0, urllib3 2.8.0 (CVE-2026-97689/-97687, per %changelog), cryptography
-#    46.0.7, requests 2.32.3, pyjwt 2.15.1, setuptools 80.9.0. Upstream also
-#    ships its own pip/distlib patch, applied via `make patch_pip` in the
-#    Dockerfile.
+#    RESET for controller 4.8.14: the whole 2.6 override set is cleared
+#    (its seds targeted 4.7.20 pins that no longer exist — e.g. yarl==1.17.2 is
+#    now 1.22.0, azure-core 1.30.0→1.35.1, cryptography 46.0.7→47.0.0; a stale
+#    aiohttp bump without the matching yarl bump caused a ResolutionImpossible).
+#    The 4.8.14 requirements already carry most prior fixes. Per our standing
+#    method we build a CLEAN 4.8.14 image FIRST, then `docker scout cves
+#    --only-severity critical,high`, then re-apply ONLY the residual fixes that
+#    (a) have a stable wheel fix and (b) are not SRC_ONLY / major-version risky.
 #
-#    The bumps below are ONLY the residual critical/high findings from that
-#    scan that (a) have a stable fix and (b) install as wheels (none are in
-#    the Makefile SRC_ONLY_PKGS list cffi,lxml,pycparser,psycopg,twilio,xmlsec,
-#    so no source recompile). Each clears its finding without a major-version
-#    risk.
+#    Re-audited 2026-11 against a clean awx:27.0.0 (`docker scout cves
+#    --only-severity critical,high` = 5C/67H). Bumps below are the residual
+#    findings with a stable wheel fix and no major-version / resolution-cap risk.
 # -------------------------------------------------------------------
-echo "=> Re-applying residual CVE bumps (post-scan)..."
+echo "=> Re-applying residual CVE bumps (post-scan, 4.8.14)..."
 REQFILE="requirements/requirements.txt"
 
-# HIGH×11: aiohttp 3.14.3 → 3.14.4 (CVE-2026-128124/-128126..128132, -123817,
-# -111064/-111066 — resource-consumption/ReDoS cluster). Patch bump; the
-# [speedups] extra is preserved. The aio stack is pip-compiled to exact pins, so
-# three transitive deps move together: aiohttp 3.14.4 needs yarl>=1.25.1, and
-# yarl 1.25.1 in turn needs propcache>=0.2.1. Co-bump yarl 1.17.2->1.25.1 (current
-# 1.x) and propcache 0.2.0->0.3.1 to avoid a ResolutionImpossible. (multidict
-# 6.0.5, frozenlist 1.8.0, aiosignal 1.4.0, aiohappyeyeballs 2.6.1 already
-# satisfy aiohttp 3.14.4's bounds.)
+# HIGH×11: aiohttp 3.14.3 -> 3.14.4. aiohttp 3.14.4 needs yarl>=1.25.1, so co-bump
+# yarl 1.22.0 -> 1.25.1 (4.8.14 ships 1.22.0; a lone aiohttp bump is a
+# ResolutionImpossible). propcache 0.4.1 already satisfies yarl's >=0.2.1.
 sedi 's/^aiohttp\[speedups\]==3.14.3$/aiohttp[speedups]==3.14.4/' "$REQFILE"
-sedi 's/^yarl==1.17.2$/yarl==1.25.1/' "$REQFILE"
-sedi 's/^propcache==0.2.0$/propcache==0.3.1/' "$REQFILE"
+sedi 's/^yarl==1.22.0$/yarl==1.25.1/' "$REQFILE"
 
-# HIGH×4: pyasn1 0.6.4 → 0.6.5 (CVE-2026-119194..119197 algorithmic-complexity).
+# HIGH×4: pyasn1 0.6.4 -> 0.6.5 (algorithmic-complexity).
 sedi 's/^pyasn1==0.6.4$/pyasn1==0.6.5/' "$REQFILE"
 
-# HIGH×3: msgpack 1.1.1 → 1.2.3 (GHSA-6v7p use-after-free, CVE-2026-57585, and
-# CVE-2026-114613 mem-leak fixed in 1.2.3). Still 1.1.1 in the 4.7.20 SRPM.
+# HIGH×3: msgpack 1.1.1 -> 1.2.3 (use-after-free / mem-leak; fix >=1.2.1).
 sedi 's/^msgpack==1.1.1$/msgpack==1.2.3/' "$REQFILE"
 
-# HIGH: azure-core 1.30.0 → 1.38.0 (CVE-2026-21226 untrusted deserialization).
-# Still 1.30.0 in the 4.7.20 SRPM.
-sedi 's/^azure-core==1.30.0$/azure-core==1.38.0/' "$REQFILE"
+# HIGH: azure-core 1.35.1 -> 1.38.0 (CVE-2026-21226 untrusted deserialization).
+sedi 's/^azure-core==1.35.1$/azure-core==1.38.0/' "$REQFILE"
 
-# cryptography 46.0.7: NOT bumpable — LEFT at upstream. Its 3 highs (GHSA-537c
-# OOB read fix 48.0.1, CVE-2026-69249 DoS fix 49.0.0, CVE-2026-69247 timing fix
-# 50.0.0) all need >=48.0.1, but pyopenssl==26.0.0 hard-caps cryptography<47 (and
-# msal==1.35.1 caps <49). A bump is ResolutionImpossible without also bumping
-# pyopenssl + msal — a cascading crypto/Azure-stack change deferred.
+# HIGH: dynaconf 3.2.12 -> 3.2.13 (patch fix).
+sedi 's/^dynaconf==3.2.12$/dynaconf==3.2.13/' "$REQFILE"
 
-# Deliberately NOT bumped — residual critical/high, each with a reason (post-scan
-# 2026-11, docker scout cves --only-severity critical,high):
-#   - go stdlib 1.26.7 (2C+9H ×2 binaries, fix 1.26.9): vendor Go binaries
-#     (podman-remote, git-lfs) in the Rocky 9 base image; 1.26.9 is not yet in
-#     Rocky 9.8. Tracked by the Dockerfile `dnf -y update`. Not built by us.
-#   - certifi 2026.1.4 (1C GHSA-6q48 cert-validation): FALSE POSITIVE. This is
-#     the ansible/system-certifi shim — certifi.where() resolves to the OS trust
-#     store /etc/pki/tls/certs/ca-bundle.crt, NOT a bundled cacert.pem, so the
-#     compromised-root advisory does not apply; OS CA trust is kept current by
-#     `dnf -y update` (ca-certificates). scout only matches the version string.
-#   - djangorestframework 3.15.2 → 3.18.2 (3H data-amplification/DoS): AWX core
-#     framework hard-pins 3.15.2; 3.15→3.18 is a breaking jump. Deferred (API
-#     regression risk, needs its own validation).
-#   - twisted 24.7.0 (5H): every fix is a pre-release (26.4.0rc2 / 26.10.0rc1).
-#   - social-auth-core 4.5.4 → 5.0.0 (1H), oauthlib 3.2.2 → 4.0.0 (1H): major
-#     auth-stack bumps; DAB pins the social-auth chain. Deferred.
-#   - lxml 4.9.4 → 6.x (1H XXE): SRC_ONLY (source-compiled) + major; SAML/XML
-#     regression risk. Deferred.
-#   - protobuf 4.25.8 → 6.x (1H): major bump; gRPC/operator wire-compat risk.
-#   - vim 8.2.2637-43 (1H, fix -44): Rocky 9 base-image rpm; caught by `dnf -y
-#     update` once Rocky ships -44.
-#   - setuptools 68.2.2 (system RPM) / 70.3.0, wheel 0.45.1, jaraco-context 5.3.0
-#     (setuptools/_vendor), urllib3 1.26.20, msgpack 1.1.2: SHADOWS/false
-#     positives — the awx venv actually ships setuptools 80.9.0, wheel 0.46.3,
-#     jaraco.context 4.3.0, urllib3 2.8.0, msgpack 1.2.3 (the bumped runtime deps
-#     above). The flagged older copies are not on the awx import path.
+# HIGH: protobuf 6.32.1 -> 6.33.5 (patch within 6.x — no gRPC/wire-compat risk).
+sedi 's/^protobuf==6.32.1$/protobuf==6.33.5/' "$REQFILE"
+
+# Deliberately NOT bumped — residual critical/high, each with a reason
+# (post-scan 2026-11, scout critical,high on awx:27.0.0):
+#   - stdlib Go 1.26.7 (2C+9H ×2 binaries, fix 1.26.9): vendor Go binaries
+#     (podman-remote, git-lfs) in the Rocky 9 base; 1.26.9 not yet in Rocky 9.8.
+#     Tracked by the Dockerfile `dnf -y update`. Not built by us.
+#   - certifi 2026.1.4 (1C GHSA-6q48): FALSE POSITIVE — the system-certifi shim;
+#     certifi.where() resolves to the OS trust store (/etc/pki ca-bundle), no
+#     bundled cacert.pem, so the compromised-root advisory does not apply.
+#   - cryptography 47.0.0 -> 49.0.0 (3H): pyopenssl==26.1.0 + msal==1.34.0 cap the
+#     crypto line; a jump to 49 is a cascading crypto/Azure-stack change. Deferred
+#     (needs its own resolution validation), as in 2.6.
+#   - djangorestframework 3.15.2 -> 3.18.2 (3H): AWX core hard-pins 3.15.2;
+#     3.15->3.18 is breaking. Deferred.
+#   - twisted 25.5.0 (5H): only fix is a pre-release (26.10.0rc1).
+#   - oauthlib 3.3.1 -> 4.0.0 (2H): major; DAB pins the social-auth chain.
+#   - SHADOWS/false positives (runtime venv ships the fixed copies): urllib3
+#     1.26.20 (runtime is 2.8.0), msgpack 1.1.2 (bumped above), setuptools
+#     68.2.2/70.3.0 (venv 80.9.0), wheel 0.45.1, jaraco-context 5.3.0/6.0.1 —
+#     flagged older copies are not on the awx import path.
 
 echo "   Patched $(grep -c '==' "$REQFILE") pinned packages"
 echo "   Done."
@@ -329,6 +332,94 @@ echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
+# 6b. Restore direct Controller access under the gateway (2.6 parity).
+#     2.7 added a block in awx/settings/__init__.py that, when
+#     RESOURCE_SERVER__URL is set (i.e. deployed under the gateway),
+#     REPLACES REST_FRAMEWORK.DEFAULT_AUTHENTICATION_CLASSES with the
+#     gateway JWT consumer ONLY — which blocks direct session/basic login
+#     at the Controller (e.g. https://awx.<host>/: /api/login/ sets a
+#     session but /api/v2/me/ then 401s as AnonymousUser). The shipped
+#     defaults already list the gateway JWT consumer ALONGSIDE
+#     SessionAuthentication + LoggedBasicAuthentication, so we neutralise
+#     the override: gateway JWT keeps working AND direct login is restored
+#     (as in 2.6). All loadable settings files run BEFORE this block, so it
+#     can only be changed in source. The assert fails the build loudly if
+#     the upstream anchor moves.
+# -------------------------------------------------------------------
+echo "=> Restoring direct Controller access (neutralise gateway JWT-only enforcement)..."
+python3 -c "
+f = 'awx/settings/__init__.py'
+content = open(f).read()
+old = \"if DYNACONF.get('RESOURCE_SERVER__URL', None):\"
+new = \"if False and DYNACONF.get('RESOURCE_SERVER__URL', None):  # debrand: keep direct access (session+basic) alongside gateway JWT\"
+assert old in content, 'JWT-only enforcement anchor not found in awx/settings/__init__.py'
+content = content.replace(old, new, 1)
+open(f, 'w').write(content)
+"
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
+# 6c. Unlimited open licensing (no subscription enforcement).
+#     The .tower_version marker (added for the full credential-type set)
+#     flips detect_server_product_name() off 'AWX', which ALSO switches
+#     get_licenser() from OpenLicense (community: unlimited, license_type
+#     'open') to the subscription-based Licenser → license_type UNLICENSED.
+#     access.py::check_license() early-returns only for 'open'; otherwise an
+#     UNLICENSED validation (no time_remaining) raises
+#     PermissionDenied("License is missing.") and blocks host adds / job
+#     launches. This is a debranded unlimited rebuild (as 2.6, which used
+#     OpenLicense because the product was 'AWX'), so force OpenLicense.
+# -------------------------------------------------------------------
+echo "=> Forcing unlimited OpenLicense in get_licenser()..."
+python3 -c "
+f = 'awx/main/utils/licensing.py'
+c = open(f).read()
+old = \"        if detect_server_product_name() == 'AWX':\"
+new = \"        if True:  # debrand: unlimited open rebuild — always OpenLicense (no subscription enforcement)\"
+assert old in c, 'get_licenser() product-name gate anchor not found in licensing.py'
+open(f, 'w').write(c.replace(old, new, 1))
+"
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
+# 6d. Debrand the browsable-API footer (shown on every /api/* page).
+#     awx/templates/rest_framework/api.html hardcodes a vendor copyright
+#     line with an external trademark hyperlink. Collapse it to the neutral
+#     product name (our debrand convention), dropping the mark + link.
+# -------------------------------------------------------------------
+echo "=> Debranding browsable-API footer (api.html)..."
+python3 -c "
+import re
+f = 'awx/templates/rest_framework/api.html'
+c = open(f).read()
+# Replace the footer-copyright div's inner content (a vendor copyright line with a
+# trademark hyperlink) STRUCTURALLY — anchored on the CSS class, with a wildcard
+# body — so the vendor mark/URL is never written into our source.
+pat = re.compile(r'(<div class=\"col-sm-6 footer-copyright\">).*?(</div>)', re.S)
+c2, n = pat.subn(r'\1\n        Automation Platform\n      \2', c, count=1)
+assert n == 1, 'footer-copyright div not found in api.html'
+open(f, 'w').write(c2)
+"
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
+# 6e. Debrand residual product-name string literals in awx source
+#     (non-UI, non-migration). These are the analytics/insights User-Agent
+#     (already 'AWX' under OpenLicense) and now-dead Licenser fields; collapse
+#     them structurally so the shipped image carries no mark. Migrations are
+#     left untouched (historical inventory-source labels tied to DB state).
+# -------------------------------------------------------------------
+echo "=> Debranding residual product-name literals in awx source..."
+for f in awx/main/utils/common.py awx/main/utils/licensing.py awx/playbooks/action_plugins/insights.py; do
+    [ -f "$f" ] && sedi -E 's|([A-Z][a-z]+ )+Automation Platform|Automation Platform|g' "$f"
+done
+echo "   Done."
+echo ""
+
+# -------------------------------------------------------------------
 # 7. Copy official AWX logos into the UI source + static media dirs.
 # -------------------------------------------------------------------
 echo "=> Copying AWX logos into UI build sources..."
@@ -341,30 +432,21 @@ echo "   Done."
 echo ""
 
 # -------------------------------------------------------------------
-# 8. Make the new UI the default (replace old CRA/webpack UI).
-#    - Patch IndexView to serve index_awx.html (Vite build)
-#    - Ensure ui_next is in STATICFILES_DIRS so collectstatic picks it up
-#    - Remove old ui/build/static entry (the CRA UI is not built)
+# 8. UI serving. Headless and already configures the UI at
+#    awx/ui/build/awx: 4.8.14's settings put ui/build/awx in TEMPLATES.DIRS
+#    (IndexView resolves index_awx.html there) and ui/build in STATICFILES_DIRS,
+#    and awx/ui/urls.py already serves index_awx.html. The Dockerfile builds our
+#    Vite UI into awx/ui/build/awx, so NO settings patch is needed (the 2.6 build
+#    had to add ui_next/build/awx to STATICFILES_DIRS — obsolete in 2.7).
 # -------------------------------------------------------------------
-echo "=> Patching AWX to serve new UI as default..."
+echo "=> Patching AWX UI serving (logos; template/static paths are native in 2.7)..."
 
-# 8a. Root IndexView serves Vite-built index_awx.html
+# 8a. IndexView already serves index_awx.html on 4.8.14 (sed is a safe no-op if so).
 sedi "s/template_name = 'index.html'/template_name = 'index_awx.html'/" awx/ui/urls.py
 
-# 8b. STATICFILES_DIRS fixup: add ui_next/build/awx, drop dead ui/build/static
-python3 -c "
-f = 'awx/settings/defaults.py'
-content = open(f).read()
-old = 'STATICFILES_DIRS = ['
-new = \"\"\"STATICFILES_DIRS = [
-    ('awx', os.path.join(BASE_DIR, 'ui_next', 'build', 'awx')),\"\"\"
-content = content.replace(old, new, 1)
-content = content.replace(\"    os.path.join(BASE_DIR, 'ui', 'build', 'static'),\n\", '')
-open(f, 'w').write(content)
-"
-
-# 8c. Copy official logos into old UI static/media (fallback paths)
-cp "${AWX_LOGOS_DIR}/awx/ui/client/assets/"* awx/ui/public/static/media/
+# 8b. Copy official logos into the UI static/media fallback paths (DRF/api pages
+#     reference /static/media/*.svg).
+cp "${AWX_LOGOS_DIR}/awx/ui/client/assets/"* awx/ui/public/static/media/ 2>/dev/null || true
 echo "   Done."
 echo ""
 

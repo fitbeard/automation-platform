@@ -6,11 +6,11 @@ on:
       tag:
         description: 'Set image tag'
         required: true
-        default: '2.6-1794615097'
+        default: '2.7-1794591068.0'
       awx-tag:
         description: 'Set AWX image tag'
         required: true
-        default: '26.1.0'
+        default: '27.0.0'
 
 jobs:
   image:

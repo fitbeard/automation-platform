@@ -1,19 +1,14 @@
-From 7784988df543e354243a1e31990646e9036c5969 Mon Sep 17 00:00:00 2001
+From ca72cc222c5cb85697177ec43bbccf3d73c2497b Mon Sep 17 00:00:00 2001
 From: AAP Rebuild <aap-rebuild-bot@localhost>
-Date: Sat, 21 Nov 2026 14:18:01 +0200
-Subject: [PATCH] patch: nginx static-asset paths -> match
- build-gateway/Dockerfile layout
+Date: Sun, 22 Nov 2026 01:25:47 +0200
+Subject: [PATCH 2/5] patch: nginx static-asset paths -> match
 
-Re-authored for 2.6-1794615097. The vendor nginx.configmap serves the platform
-UI from /var/lib/ansible-automation-platform/platform/ui{,/static}; our gateway
-image ships it at /opt/aap_gateway/platform_ui (+ collectstatic at
-/opt/aap_gateway/static). Repoint the alias/root accordingly.
 ---
  .../templates/nginx.configmap.yaml.j2                       | 6 +++---
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2 b/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2
-index 115a91b..8b7808c 100644
+index 7eb8753..cc5f3a0 100644
 --- a/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2
 +++ b/roles/ansibleautomationplatform/templates/nginx.configmap.yaml.j2
 @@ -73,7 +73,7 @@ data:

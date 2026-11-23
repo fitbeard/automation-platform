@@ -6,7 +6,7 @@ replicaCount: 1
 # -- Operator container image
 image:
   repository: quay.io/fitbeard/automation-platform/awx-operator
-  tag: 2.6-1794615097
+  tag: 2.7-1794591068.0
   pullPolicy: IfNotPresent
 
 # -- Pull secrets for private registries hosting the operator/EE/AWX images
@@ -34,17 +34,20 @@ leaderElection:
 #    chain so users can deploy a CR without restating image fields each time.
 #    Empty string skips the env var (falls back to upstream default).
 relatedImages:
-  awx: quay.io/fitbeard/automation-platform/awx:26.1.0
-  controlPlaneEE: quay.io/fitbeard/automation-platform/awx-ee:26.1.0
+  awx: quay.io/fitbeard/automation-platform/awx:27.0.0
+  controlPlaneEE: quay.io/fitbeard/automation-platform/awx-ee:27.0.0
   awxInitContainer: ""        # auto-derives from controlPlaneEE via patch 0002
   awxInitProjectsContainer: ""
   awxRedis: ""
   awxPostgres: ""
 
 # -- Optional kube-rbac-proxy sidecar exposing /metrics behind authn/authz.
-#    Disable on small / dev clusters to skip the extra container.
+#    Operator-sdk v1.40+ REMOVED kube-rbac-proxy upstream (commit
+#    5fb6bb7) — the ansible-operator binary now serves metrics with built-in
+#    auth. Default OFF; the sidecar + metrics-service templates remain for
+#    anyone who still wants the external proxy pattern.
 kubeRbacProxy:
-  enabled: true
+  enabled: false
   image:
     repository: registry.k8s.io/kubebuilder/kube-rbac-proxy
     tag: v0.15.0

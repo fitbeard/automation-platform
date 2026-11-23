@@ -9,25 +9,23 @@
 # We deploy the whole binary; only AnsibleMCPConnect CRs ever get applied,
 # so the chatbot/Lightspeed code paths never execute.
 #
-# REFRESH POLICY — MINIMAL (2026-09). Unlike awx/eda-operator, this operator's
-# downstream is NOT cleanly reconstructable from public commits: the bundle
-# stays on ansible-operator v1.36.1 + kube-rbac-proxy (the vendored stable-2.6 line),
-# while public main took operator-sdk v1.40 (2026-03-03) → v1.42.3, removing
-# kube-rbac-proxy and restructuring config. Every new bundle feature (MCP
-# backup/restore, telemetry_hmac, installer_id, proxy-env) is layered on that
-# post-v1.40 public structure and cannot be cherry-picked onto our pre-v1.40
-# baseline. Those features are unused in our deployment (we only exercise the
-# AnsibleMCPConnect deploy path), so we KEEP the verified baseline and skip
-# them. The only graft is the operator-side half of the MCP_PORT/service-link
-# fix (patch 0002), which pairs with the mcp-server image we ship.
+# REFRESH POLICY —  (2026-11): build from public main HEAD. In 2.6 this was
+# the ONE operator pinned pre-v1.40 (baseline 1e1d9cc3) because our base-image lock
+# was ansible-operator v1.36.1. For 2.7 v1.40+ is accepted (awx/eda/gateway build on
+# v1.40.0/v1.42.3), so public main's v1.42.3-native tree is usable directly — no
+# more "minimal/not-reconstructable" workaround, no cherry-picks. Public main is
+# upstream-pure mcpconnect.ansible.com/AnsibleMCPConnect (we keep that; the 2.7
+# downstream mcpserver rename is NOT applied — our gateway-op cascade uses mcpconnect
+# too). The 2.6 patches are superseded: the 2.7 patches/0001 (MCP-only watches.yaml)
+# subsumes the old 0001 (drop chatbot watch); 0002 (enableServiceLinks) is now upstream.
 #
 # Build steps:
 #   1. git clone https://github.com/ansible/ansible-ai-connect-operator
-#   2. git checkout 1e1d9cc3a8847b4530db7b7262beab446a85b2e6   (baseline, pre-v1.40)
-#   3. (no cherry-picks — baseline already has full MCP capability)
-#   4. patch.sh applies local patches (0001 drop-chatbot-watch, 0002 enableServiceLinks)
-#   5. snapshot only mcpconnect.ansible.com_*.yaml CRDs (skip aiconnect ones)
-#   6. docker build
+#   2. git checkout <public main HEAD>   (v1.42.3-native)
+#   3. (no cherry-picks)
+#   4. patch.sh — apply patches/*.patch via git am (0001 = MCP-only watches.yaml)
+#   5. snapshot only mcpconnect.ansible.com_ansiblemcpconnects.yaml
+#   6. docker build (Dockerfile FROM ansible-operator:v1.42.3, native — no base swap)
 #
 # Cherry-pick scope (deliberately empty):
 #
@@ -73,7 +71,13 @@ SRC_DIR="${SCRIPT_DIR}/src"
 # --- Upstream pin ------------------------------------------------------------
 
 UPSTREAM_URL="https://github.com/ansible/ansible-ai-connect-operator"
-BASELINE_COMMIT="${BASELINE_COMMIT:-1e1d9cc3a8847b4530db7b7262beab446a85b2e6}"
+# Moved OFF the old pre-v1.40 baseline (1e1d9cc3) to public main HEAD.
+# Now that ansible-operator v1.40+ is accepted (awx/eda/gateway all build on
+# v1.40.0/v1.42.3), public main's v1.42.3-native structure is usable directly —
+# this was the ONE operator stuck pre-v1.40 in 2.6. Public main stays upstream-pure
+# `mcpconnect.ansible.com/AnsibleMCPConnect` (matches our gateway-op cascade, which
+# inverts the 2.7 downstream `mcpserver` rename via unpatch.sh), so NO downstreamify.
+BASELINE_COMMIT="${BASELINE_COMMIT:-d65c414489567b9559d968add538b4c52c94b9e8}"
 
 CHERRY_PICKS=()
 
@@ -96,7 +100,7 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-1794615097}"
+VERSION="${VERSION:-2.7-1794591068.0}"
 IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/ansible-ai-connect-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
@@ -139,7 +143,14 @@ fi
 
 cd "$SCRIPT_DIR"
 
-# --- Apply local patches on top of upstream ----------------------------------
+# --- Apply our patches via git am (patch.sh) ---------------------------------
+# Source deltas to the operator's ansible tree live in patches/ as git-format-patch
+# mailbox files, applied by patch.sh with `git am --3way`. Same transparent,
+# drift-surfacing workflow as the other operators — each patch becomes a reviewable
+# commit in src/'s git log, and upstream drift fails loudly at `git am` instead of
+# being silently skipped. Currently:
+#   0001  MCP-only watches.yaml (drop Lightspeed + MCP backup/restore watches)
+# (Supersedes the 2.6 git-am 0001 drop-chatbot-watch + 0002 enableServiceLinks.)
 if [[ -x "${SCRIPT_DIR}/patch.sh" ]]; then
     "${SCRIPT_DIR}/patch.sh"
 fi
@@ -147,13 +158,14 @@ fi
 echo "==> src/ ready at $(cd "$SRC_DIR" && git rev-parse --short HEAD)"
 
 # --- Snapshot CRDs to ./crds/ ------------------------------------------------
-# Only mcpconnect.ansible.com_*.yaml — we deliberately skip aiconnect.ansible.com
-# (Lightspeed/chatbot CRDs we never apply).
+# Only the AnsibleMCPConnect CRD — we skip aiconnect.ansible.com (Lightspeed) and
+# the new AnsibleMCPConnectBackup/Restore CRDs (we deploy only the MCP server, and
+# watches.yaml above drops their watches).
 CRDS_OUT="${SCRIPT_DIR}/crds"
-echo "==> Snapshotting MCP CRDs to $(realpath --relative-to="$PWD" "$CRDS_OUT" 2>/dev/null || echo "$CRDS_OUT")/"
+echo "==> Snapshotting MCP CRD to $(realpath --relative-to="$PWD" "$CRDS_OUT" 2>/dev/null || echo "$CRDS_OUT")/"
 rm -rf "$CRDS_OUT"
 mkdir -p "$CRDS_OUT"
-cp "${SRC_DIR}"/config/crd/bases/mcpconnect.ansible.com_*.yaml "$CRDS_OUT"/
+cp "${SRC_DIR}"/config/crd/bases/mcpconnect.ansible.com_ansiblemcpconnects.yaml "$CRDS_OUT"/
 echo "==> CRDs ($(ls "$CRDS_OUT" | wc -l | tr -d ' ')): $(ls "$CRDS_OUT" | tr '\n' ' ')"
 
 # --- Build -------------------------------------------------------------------

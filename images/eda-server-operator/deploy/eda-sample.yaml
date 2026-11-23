@@ -42,15 +42,18 @@ spec:
       value: ""
   # Single replica per component for kind/dev (default is 2). Drop these
   # blocks for production-sized deploys.
+  # NOTE: (eda 1.3.x) removed the standalone `scheduler` component —
+  # the 2.7 EDA CRD components are api, ui, default_worker, activation_worker,
+  # event_stream (strict CRD decoding rejects `scheduler`).
   api:
     replicas: 1
   ui:
     replicas: 1
-  scheduler:
-    replicas: 1
   default_worker:
     replicas: 1
   activation_worker:
+    replicas: 1
+  event_stream:
     replicas: 1
 
 # ---

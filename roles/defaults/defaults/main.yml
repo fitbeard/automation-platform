@@ -33,7 +33,7 @@ awx_peers: []
 awx_peers_from_control_nodes: true
 
 ## AWX
-awx_image_tag: 26.1.0
+awx_image_tag: 27.0.0
 awx_image: awx
 awx_ee_image_tag: "{{ awx_image_tag }}"
 awx_ee_image: awx-ee
@@ -140,11 +140,11 @@ gateway_cluster_node_host_id: "{{ ansible_fqdn }}"
 
 gateway_hostname: "{{ undef(hint='You must specify a AP frontend address with protocol e.g. https://gateway.demo.io') }}"
 
-gateway_image_tag: 2.6.20261116
+gateway_image_tag: 2.7.20261116
 gateway_image: gateway
 gateway_image_registry: quay.io
 gateway_image_url: "{{ gateway_image_registry }}/fitbeard/automation-platform/{{ gateway_image }}:{{ gateway_image_tag }}"
-gateway_envoy_version: v1.34.14
+gateway_envoy_version: v1.36.13
 
 gateway_directory: /opt/gateway
 

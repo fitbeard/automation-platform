@@ -65,7 +65,7 @@ ansible-galaxy collection install fitbeard.awx
 Or pin a release, for example:
 
 ```shell
-ansible-galaxy collection install fitbeard.awx:26.1.0
+ansible-galaxy collection install fitbeard.awx:27.0.0
 ```
 
 ## Requirements
@@ -74,7 +74,7 @@ ansible-galaxy collection install fitbeard.awx:26.1.0
 - Ansible Core compatible with this repository, currently `<2.20.0`.
 - Docker on target hosts, unless you let the demo `docker` role install it.
 - OpenSSL for generating CA and service certificate material.
-- For image builds: Docker Buildx, `git`, `curl`, `rpm2cpio`, `cpio`, and
+- For image builds: Docker Buildx, `git`, `curl` and
   `ansible-builder` for execution environment images.
 - For Helm/operator work: `kubectl`, `helm`, and access to any private registry
   required by your chosen image source.
@@ -220,27 +220,27 @@ environment definitions. Most image builds support both `linux/amd64` and
 
 | Image | Default tag | Source path |
 | --- | --- | --- |
-| `quay.io/fitbeard/automation-platform/awx` | `26.1.0` | `images/awx` |
-| `quay.io/fitbeard/automation-platform/awx-ee` | `26.1.0` | `images/awx-ee` |
-| `quay.io/fitbeard/automation-platform/gateway` | `2.6.20261116` | `images/gateway` |
-| `quay.io/fitbeard/automation-platform/eda-server` | `1.2.15` | `images/eda` |
-| `quay.io/fitbeard/automation-platform/eda-ui` | `2.6.16` | `images/eda` |
-| `quay.io/fitbeard/automation-platform/eda-de` | `26.1.0` | `images/eda-de` |
+| `quay.io/fitbeard/automation-platform/awx` | `27.0.0` | `images/awx` |
+| `quay.io/fitbeard/automation-platform/awx-ee` | `27.0.0` | `images/awx-ee` |
+| `quay.io/fitbeard/automation-platform/gateway` | `2.7.20261116` | `images/gateway` |
+| `quay.io/fitbeard/automation-platform/eda-server` | `1.3.15` | `images/eda` |
+| `quay.io/fitbeard/automation-platform/eda-ui` | `2.7.14` | `images/eda` |
+| `quay.io/fitbeard/automation-platform/eda-de` | `27.0.0` | `images/eda-de` |
 | `quay.io/fitbeard/automation-platform/mcp-server` | upstream commit tag | `images/mcp-server` |
-| `quay.io/fitbeard/automation-platform/awx-operator` | `2.6-1794615097` | `images/awx-operator` |
-| `quay.io/fitbeard/automation-platform/eda-server-operator` | `2.6-1794615097` | `images/eda-server-operator` |
+| `quay.io/fitbeard/automation-platform/awx-operator` | `2.7-1794591068.0` | `images/awx-operator` |
+| `quay.io/fitbeard/automation-platform/eda-server-operator` | `2.7-1794591068.0` | `images/eda-server-operator` |
 | `quay.io/fitbeard/automation-platform/awx-resource-operator` | `2.6-709` | `images/awx-resource-operator` |
 | `quay.io/fitbeard/automation-platform/awx-resource-runner` | `2.6-709` | `images/awx-resource-operator` |
-| `quay.io/fitbeard/automation-platform/ansible-ai-connect-operator` | `2.6-1794615097` | `images/ansible-ai-connect-operator` |
+| `quay.io/fitbeard/automation-platform/ansible-ai-connect-operator` | `2.7-1794591068.0` | `images/ansible-ai-connect-operator` |
 
 Example builds:
 
 ```shell
 cd images/awx
-VERSION=26.1.0 ./build.sh --push
+VERSION=27.0.0 ./build.sh --push
 
 cd ../gateway
-VERSION=2.6.20261116 ./build.sh --push
+VERSION=2.7.20261116 ./build.sh --push
 ```
 
 Execution environment images use `ansible-builder`:
@@ -249,7 +249,7 @@ Execution environment images use `ansible-builder`:
 cd images/awx-ee
 ansible-builder create -v3 --file execution-environment.yml --context . --output-filename=Dockerfile
 docker buildx build --platform linux/amd64,linux/arm64 --push \
-  -t quay.io/fitbeard/automation-platform/awx-ee:26.1.0 .
+  -t quay.io/fitbeard/automation-platform/awx-ee:27.0.0 .
 ```
 
 `images/ap-gateway-operator` is special: the Gateway operator source is

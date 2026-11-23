@@ -6,7 +6,7 @@ on:
       tag:
         description: 'Set image tag'
         required: true
-        default: '2.6.20261116'
+        default: '2.7.20261116'
 
 jobs:
   image:
@@ -27,10 +27,6 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get install -y rpm2cpio cpio
 
       - name: Build images
         run: |

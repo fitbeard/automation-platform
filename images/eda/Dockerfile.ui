@@ -16,7 +16,9 @@ RUN dnf install -y nodejs && npm install -g n && n 20
 COPY ap-ui/ /tmp/ap-ui/
 WORKDIR /tmp/ap-ui
 
-RUN npm ci
+# `npm install` (not `npm ci`): the vendor's Cachi2-wired lockfile was stripped
+# in build.sh so deps resolve from the public npm registry (.npmrc guards kept).
+RUN npm install
 RUN cd frontend/eda && NODE_OPTIONS=--max-old-space-size=8192 npx vite build
 
 # =============================================================================

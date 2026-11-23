@@ -37,6 +37,16 @@ spec:
             x-kubernetes-validations:
               - rule: "!has(self.event_stream) || !has(self.event_stream.prefix) || !has(self.event_stream.mtls_prefix) || self.event_stream.prefix != self.event_stream.mtls_prefix"
                 message: "Event stream prefix and mtls_prefix cannot be the same."
+              - rule: "!has(self.event_stream) || !has(self.event_stream.database_secret) || !has(self.database) || !has(self.database.database_secret) || self.event_stream.database_secret != self.database.database_secret"
+                message: "Event stream database_secret must be different from the main database.database_secret."
+              - rule: "has(self.image) && has(self.image_version) || !has(self.image) && !has(self.image_version)"
+                message: "Both image and image_version must be set when required"
+              - rule: "has(self.image_web) && has(self.image_web_version) || !has(self.image_web) && !has(self.image_web_version)"
+                message: "Both image_web and image_web_version must be set when required"
+              - rule: "has(self.redis_image) && has(self.redis_image_version) || !has(self.redis_image) && !has(self.redis_image_version)"
+                message: "Both redis_image and redis_image_version must be set when required"
+              - rule: "has(self.postgres_image) && has(self.postgres_image_version) || !has(self.postgres_image) && !has(self.postgres_image_version)"
+                message: "Both postgres_image and postgres_image_version must be set when required"
             properties:
               additional_labels:
                 description: Additional labels defined on the resource, which should be propagated to child resources
@@ -89,380 +99,14 @@ spec:
                 description: UI container image tag or version to use
                 type: string
               redis_image:
-                description: Registry path to Redis container image to use
+                description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA. It will be removed in a future apiVersion."
                 type: string
               redis_image_version:
-                description: Redis container image tag or version to use
+                description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA. It will be removed in a future apiVersion."
                 type: string
               api:
                 description: Defines desired state of eda-api resources
                 properties:
-                  affinity:
-                    description: If specified, the pod's scheduling constraints
-                    properties:
-                      nodeAffinity:
-                        properties:
-                          preferredDuringSchedulingIgnoredDuringExecution:
-                            items:
-                              properties:
-                                preference:
-                                  properties:
-                                    matchExpressions:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                    matchFields:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                                weight:
-                                  format: int32
-                                  type: integer
-                              required:
-                              - preference
-                              - weight
-                              type: object
-                            type: array
-                          requiredDuringSchedulingIgnoredDuringExecution:
-                            properties:
-                              nodeSelectorTerms:
-                                items:
-                                  properties:
-                                    matchExpressions:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                    matchFields:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                                type: array
-                            required:
-                            - nodeSelectorTerms
-                            type: object
-                            x-kubernetes-map-type: atomic
-                        type: object
-                      podAffinity:
-                        properties:
-                          preferredDuringSchedulingIgnoredDuringExecution:
-                            items:
-                              properties:
-                                podAffinityTerm:
-                                  properties:
-                                    labelSelector:
-                                      properties:
-                                        matchExpressions:
-                                          items:
-                                            properties:
-                                              key:
-                                                type: string
-                                              operator:
-                                                type: string
-                                              values:
-                                                items:
-                                                  type: string
-                                                type: array
-                                            required:
-                                            - key
-                                            - operator
-                                            type: object
-                                          type: array
-                                        matchLabels:
-                                          additionalProperties:
-                                            type: string
-                                          type: object
-                                      type: object
-                                      x-kubernetes-map-type: atomic
-                                    namespaceSelector:
-                                      properties:
-                                        matchExpressions:
-                                          items:
-                                            properties:
-                                              key:
-                                                type: string
-                                              operator:
-                                                type: string
-                                              values:
-                                                items:
-                                                  type: string
-                                                type: array
-                                            required:
-                                            - key
-                                            - operator
-                                            type: object
-                                          type: array
-                                        matchLabels:
-                                          additionalProperties:
-                                            type: string
-                                          type: object
-                                      type: object
-                                      x-kubernetes-map-type: atomic
-                                    namespaces:
-                                      items:
-                                        type: string
-                                      type: array
-                                    topologyKey:
-                                      type: string
-                                  required:
-                                  - topologyKey
-                                  type: object
-                                weight:
-                                  format: int32
-                                  type: integer
-                              required:
-                              - podAffinityTerm
-                              - weight
-                              type: object
-                            type: array
-                          requiredDuringSchedulingIgnoredDuringExecution:
-                            items:
-                              properties:
-                                labelSelector:
-                                  properties:
-                                    matchExpressions:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                    matchLabels:
-                                      additionalProperties:
-                                        type: string
-                                      type: object
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                                namespaceSelector:
-                                  properties:
-                                    matchExpressions:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                    matchLabels:
-                                      additionalProperties:
-                                        type: string
-                                      type: object
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                                namespaces:
-                                  items:
-                                    type: string
-                                  type: array
-                                topologyKey:
-                                  type: string
-                              required:
-                              - topologyKey
-                              type: object
-                            type: array
-                        type: object
-                      podAntiAffinity:
-                        properties:
-                          preferredDuringSchedulingIgnoredDuringExecution:
-                            items:
-                              properties:
-                                podAffinityTerm:
-                                  properties:
-                                    labelSelector:
-                                      properties:
-                                        matchExpressions:
-                                          items:
-                                            properties:
-                                              key:
-                                                type: string
-                                              operator:
-                                                type: string
-                                              values:
-                                                items:
-                                                  type: string
-                                                type: array
-                                            required:
-                                            - key
-                                            - operator
-                                            type: object
-                                          type: array
-                                        matchLabels:
-                                          additionalProperties:
-                                            type: string
-                                          type: object
-                                      type: object
-                                      x-kubernetes-map-type: atomic
-                                    namespaceSelector:
-                                      properties:
-                                        matchExpressions:
-                                          items:
-                                            properties:
-                                              key:
-                                                type: string
-                                              operator:
-                                                type: string
-                                              values:
-                                                items:
-                                                  type: string
-                                                type: array
-                                            required:
-                                            - key
-                                            - operator
-                                            type: object
-                                          type: array
-                                        matchLabels:
-                                          additionalProperties:
-                                            type: string
-                                          type: object
-                                      type: object
-                                      x-kubernetes-map-type: atomic
-                                    namespaces:
-                                      items:
-                                        type: string
-                                      type: array
-                                    topologyKey:
-                                      type: string
-                                  required:
-                                  - topologyKey
-                                  type: object
-                                weight:
-                                  format: int32
-                                  type: integer
-                              required:
-                              - podAffinityTerm
-                              - weight
-                              type: object
-                            type: array
-                          requiredDuringSchedulingIgnoredDuringExecution:
-                            items:
-                              properties:
-                                labelSelector:
-                                  properties:
-                                    matchExpressions:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                    matchLabels:
-                                      additionalProperties:
-                                        type: string
-                                      type: object
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                                namespaceSelector:
-                                  properties:
-                                    matchExpressions:
-                                      items:
-                                        properties:
-                                          key:
-                                            type: string
-                                          operator:
-                                            type: string
-                                          values:
-                                            items:
-                                              type: string
-                                            type: array
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                    matchLabels:
-                                      additionalProperties:
-                                        type: string
-                                      type: object
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                                namespaces:
-                                  items:
-                                    type: string
-                                  type: array
-                                topologyKey:
-                                  type: string
-                              required:
-                              - topologyKey
-                              type: object
-                            type: array
-                        type: object
-                    type: object
                   gunicorn_workers:
                     description: 'The number of gunicorn workers for the api.
                       Default: 2'
@@ -796,10 +440,6 @@ spec:
                       - whenUnsatisfiable
                       type: object
                     type: array
-                type: object
-              event_stream:
-                description: Defines desired state of Event Stream resources
-                properties:
                   affinity:
                     description: If specified, the pod's scheduling constraints
                     properties:
@@ -1166,6 +806,38 @@ spec:
                             type: array
                         type: object
                     type: object
+                type: object
+              event_persistence:
+                description: |
+                  Defines desired state of Event Persistence database.
+                  Event persistence is opt-in. Set deploy_db: true to provision a dedicated
+                  database for persisting in-flight events during activation processing.
+                properties:
+                  deploy_db:
+                    description: |
+                      Deploy the event persistence database.
+                      When true, the operator will create a dedicated database and auto-generate
+                      credentials for event persistence. When false or omitted, event persistence
+                      is not configured automatically in EDA.
+                    type: boolean
+                    default: false
+                  database_secret:
+                    description: |
+                      Name of a pre-existing secret containing event persistence database credentials.
+                      This is primarily used internally when deployed via the AAP gateway operator.
+                      If not provided, credentials will be auto-generated for managed databases.
+                    type: string
+                type: object
+              event_stream:
+                description: Defines desired state of Event Stream resources
+                properties:
+                  database_secret:
+                    description: |
+                      Name of a pre-existing secret containing event stream database credentials.
+                      If not provided, credentials will be auto-generated for managed databases.
+                      Secret must contain keys: username, password, database, host, port, sslmode, type.
+                      For external databases, the user must be pre-created with CONNECT privilege on the EDA database.
+                    type: string
                   mtls:
                     description: Enable mTLS for event-stream.
                     type: boolean
@@ -1509,10 +1181,6 @@ spec:
                       - whenUnsatisfiable
                       type: object
                     type: array
-                type: object
-              ui:
-                description: Defines desired state of eda-ui resources
-                properties:
                   affinity:
                     description: If specified, the pod's scheduling constraints
                     properties:
@@ -1879,6 +1547,10 @@ spec:
                             type: array
                         type: object
                     type: object
+                type: object
+              ui:
+                description: Defines desired state of eda-ui resources
+                properties:
                   node_selector:
                     additionalProperties:
                       type: string
@@ -2205,10 +1877,6 @@ spec:
                       - whenUnsatisfiable
                       type: object
                     type: array
-                type: object
-              default_worker:
-                description: Defines desired state of eda-default-worker resources
-                properties:
                   affinity:
                     description: If specified, the pod's scheduling constraints
                     properties:
@@ -2575,6 +2243,10 @@ spec:
                             type: array
                         type: object
                     type: object
+                type: object
+              default_worker:
+                description: Defines desired state of eda-default-worker resources
+                properties:
                   node_selector:
                     additionalProperties:
                       type: string
@@ -2901,10 +2573,6 @@ spec:
                       - whenUnsatisfiable
                       type: object
                     type: array
-                type: object
-              activation_worker:
-                description: Defines desired state of eda-activation-worker resources
-                properties:
                   affinity:
                     description: If specified, the pod's scheduling constraints
                     properties:
@@ -3271,6 +2939,10 @@ spec:
                             type: array
                         type: object
                     type: object
+                type: object
+              activation_worker:
+                description: Defines desired state of eda-activation-worker resources
+                properties:
                   node_selector:
                     additionalProperties:
                       type: string
@@ -3597,10 +3269,6 @@ spec:
                       - whenUnsatisfiable
                       type: object
                     type: array
-                type: object
-              worker:
-                description: (Deprecated) Defines desired state of eda-worker resources
-                properties:
                   affinity:
                     description: If specified, the pod's scheduling constraints
                     properties:
@@ -3967,6 +3635,10 @@ spec:
                             type: array
                         type: object
                     type: object
+                type: object
+              worker:
+                description: (Deprecated) Defines desired state of eda-worker resources
+                properties:
                   node_selector:
                     additionalProperties:
                       type: string
@@ -4293,345 +3965,381 @@ spec:
                       - whenUnsatisfiable
                       type: object
                     type: array
-                type: object
-              scheduler:
-                description: Defines desired state of eda-scheduler resources
-                properties:
-                  node_selector:
-                    additionalProperties:
-                      type: string
-                    description: NodeSelector for the EDA pods.
-                    type: object
-                  replicas:
-                    description: 'Size is the size of number of eda-scheduler replicas.
-                      Default: 2'
-                    format: int32
-                    default: 2
-                    minimum: 0
-                    nullable: true
-                    type: integer
-                  resource_requirements:
-                    description: Resource requirements for the eda-scheduler container.
+                  affinity:
+                    description: If specified, the pod's scheduling constraints
                     properties:
-                      claims:
-                        description: "Claims lists the names of resources, defined
-                          in spec.resourceClaims, that are used by this container.
-                          \n This is an alpha field and requires enabling the DynamicResourceAllocation
-                          feature gate. \n This field is immutable."
-                        items:
-                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                          properties:
-                            name:
-                              description: Name must match the name of one entry in
-                                pod.spec.resourceClaims of the Pod where this field
-                                is used. It makes that resource available inside a
-                                container.
-                              type: string
-                          required:
-                          - name
-                          type: object
-                        type: array
-                        x-kubernetes-list-map-keys:
-                        - name
-                        x-kubernetes-list-type: map
-                      limits:
-                        additionalProperties:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        description: 'Limits describes the maximum amount of compute
-                          resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
-                        type: object
-                      requests:
-                        additionalProperties:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        description: 'Requests describes the minimum amount of compute
-                          resources required. If Requests is omitted for a container,
-                          it defaults to Limits if that is explicitly specified, otherwise
-                          to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
-                        type: object
-                    type: object
-                  strategy:
-                    description: The deployment strategy to use to replace existing
-                      pods with new ones.
-                    properties:
-                      rollingUpdate:
-                        description: 'Rolling update config params. Present only if
-                          DeploymentStrategyType = RollingUpdate. --- TODO: Update
-                          this to follow our convention for oneOf, whatever we decide
-                          it to be.'
+                      nodeAffinity:
                         properties:
-                          maxSurge:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            description: 'The maximum number of pods that can be scheduled
-                              above the desired number of pods. Value can be an absolute
-                              number (ex: 5) or a percentage of desired pods (ex:
-                              10%). This can not be 0 if MaxUnavailable is 0. Absolute
-                              number is calculated from percentage by rounding up.
-                              Defaults to 25%. Example: when this is set to 30%, the
-                              new ReplicaSet can be scaled up immediately when the
-                              rolling update starts, such that the total number of
-                              old and new pods do not exceed 130% of desired pods.
-                              Once old pods have been killed, new ReplicaSet can be
-                              scaled up further, ensuring that total number of pods
-                              running at any time during the update is at most 130%
-                              of desired pods.'
-                            x-kubernetes-int-or-string: true
-                          maxUnavailable:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            description: 'The maximum number of pods that can be unavailable
-                              during the update. Value can be an absolute number (ex:
-                              5) or a percentage of desired pods (ex: 10%). Absolute
-                              number is calculated from percentage by rounding down.
-                              This can not be 0 if MaxSurge is 0. Defaults to 25%.
-                              Example: when this is set to 30%, the old ReplicaSet
-                              can be scaled down to 70% of desired pods immediately
-                              when the rolling update starts. Once new pods are ready,
-                              old ReplicaSet can be scaled down further, followed
-                              by scaling up the new ReplicaSet, ensuring that the
-                              total number of pods available at all times during the
-                              update is at least 70% of desired pods.'
-                            x-kubernetes-int-or-string: true
-                        type: object
-                      type:
-                        description: Type of deployment. Can be "Recreate" or "RollingUpdate".
-                          Default is RollingUpdate.
-                        type: string
-                    type: object
-                  tolerations:
-                    description: Node tolerations for the EDA pods.
-                    items:
-                      description: The pod this Toleration is attached to tolerates
-                        any taint that matches the triple <key,value,effect> using
-                        the matching operator <operator>.
-                      properties:
-                        effect:
-                          description: Effect indicates the taint effect to match.
-                            Empty means match all taint effects. When specified, allowed
-                            values are NoSchedule, PreferNoSchedule and NoExecute.
-                          type: string
-                        key:
-                          description: Key is the taint key that the toleration applies
-                            to. Empty means match all taint keys. If the key is empty,
-                            operator must be Exists; this combination means to match
-                            all values and all keys.
-                          type: string
-                        operator:
-                          description: Operator represents a key's relationship to
-                            the value. Valid operators are Exists and Equal. Defaults
-                            to Equal. Exists is equivalent to wildcard for value,
-                            so that a pod can tolerate all taints of a particular
-                            category.
-                          type: string
-                        tolerationSeconds:
-                          description: TolerationSeconds represents the period of
-                            time the toleration (which must be of effect NoExecute,
-                            otherwise this field is ignored) tolerates the taint.
-                            By default, it is not set, which means tolerate the taint
-                            forever (do not evict). Zero and negative values will
-                            be treated as 0 (evict immediately) by the system.
-                          format: int64
-                          type: integer
-                        value:
-                          description: Value is the taint value the toleration matches
-                            to. If the operator is Exists, the value should be empty,
-                            otherwise just a regular string.
-                          type: string
-                      type: object
-                    type: array
-                  topology_spread_constraints:
-                    description: Topology rule(s) for the pods.
-                    items:
-                      description: TopologySpreadConstraint specifies how to spread
-                        matching pods among the given topology.
-                      properties:
-                        labelSelector:
-                          description: LabelSelector is used to find matching pods.
-                            Pods that match this label selector are counted to determine
-                            the number of pods in their corresponding topology domain.
-                          properties:
-                            matchExpressions:
-                              description: matchExpressions is a list of label selector
-                                requirements. The requirements are ANDed.
-                              items:
-                                description: A label selector requirement is a selector
-                                  that contains values, a key, and an operator that
-                                  relates the key and values.
-                                properties:
-                                  key:
-                                    description: key is the label key that the selector
-                                      applies to.
-                                    type: string
-                                  operator:
-                                    description: operator represents a key's relationship
-                                      to a set of values. Valid operators are In,
-                                      NotIn, Exists and DoesNotExist.
-                                    type: string
-                                  values:
-                                    description: values is an array of string values.
-                                      If the operator is In or NotIn, the values array
-                                      must be non-empty. If the operator is Exists
-                                      or DoesNotExist, the values array must be empty.
-                                      This array is replaced during a strategic merge
-                                      patch.
-                                    items:
-                                      type: string
-                                    type: array
-                                required:
-                                - key
-                                - operator
-                                type: object
-                              type: array
-                            matchLabels:
-                              additionalProperties:
-                                type: string
-                              description: matchLabels is a map of {key,value} pairs.
-                                A single {key,value} in the matchLabels map is equivalent
-                                to an element of matchExpressions, whose key field
-                                is "key", the operator is "In", and the values array
-                                contains only "value". The requirements are ANDed.
+                          preferredDuringSchedulingIgnoredDuringExecution:
+                            items:
+                              properties:
+                                preference:
+                                  properties:
+                                    matchExpressions:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchFields:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                weight:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - preference
+                              - weight
                               type: object
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        matchLabelKeys:
-                          description: MatchLabelKeys is a set of pod label keys to
-                            select the pods over which spreading will be calculated.
-                            The keys are used to lookup values from the incoming pod
-                            labels, those key-value labels are ANDed with labelSelector
-                            to select the group of existing pods over which spreading
-                            will be calculated for the incoming pod. Keys that don't
-                            exist in the incoming pod labels will be ignored. A null
-                            or empty list means only match against labelSelector.
-                          items:
-                            type: string
-                          type: array
-                          x-kubernetes-list-type: atomic
-                        maxSkew:
-                          description: 'MaxSkew describes the degree to which pods
-                            may be unevenly distributed. When `whenUnsatisfiable=DoNotSchedule`,
-                            it is the maximum permitted difference between the number
-                            of matching pods in the target topology and the global
-                            minimum. The global minimum is the minimum number of matching
-                            pods in an eligible domain or zero if the number of eligible
-                            domains is less than MinDomains. For example, in a 3-zone
-                            cluster, MaxSkew is set to 1, and pods with the same labelSelector
-                            spread as 2/2/1: In this case, the global minimum is 1.
-                            | zone1 | zone2 | zone3 | |  P P  |  P P  |   P   | -
-                            if MaxSkew is 1, incoming pod can only be scheduled to
-                            zone3 to become 2/2/2; scheduling it onto zone1(zone2)
-                            would make the ActualSkew(3-1) on zone1(zone2) violate
-                            MaxSkew(1). - if MaxSkew is 2, incoming pod can be scheduled
-                            onto any zone. When `whenUnsatisfiable=ScheduleAnyway`,
-                            it is used to give higher precedence to topologies that
-                            satisfy it. It''s a required field. Default value is 1
-                            and 0 is not allowed.'
-                          format: int32
-                          type: integer
-                        minDomains:
-                          description: "MinDomains indicates a minimum number of eligible
-                            domains. When the number of eligible domains with matching
-                            topology keys is less than minDomains, Pod Topology Spread
-                            treats \"global minimum\" as 0, and then the calculation
-                            of Skew is performed. And when the number of eligible
-                            domains with matching topology keys equals or greater
-                            than minDomains, this value has no effect on scheduling.
-                            As a result, when the number of eligible domains is less
-                            than minDomains, scheduler won't schedule more than maxSkew
-                            Pods to those domains. If value is nil, the constraint
-                            behaves as if MinDomains is equal to 1. Valid values are
-                            integers greater than 0. When value is not nil, WhenUnsatisfiable
-                            must be DoNotSchedule. \n For example, in a 3-zone cluster,
-                            MaxSkew is set to 2, MinDomains is set to 5 and pods with
-                            the same labelSelector spread as 2/2/2: | zone1 | zone2
-                            | zone3 | |  P P  |  P P  |  P P  | The number of domains
-                            is less than 5(MinDomains), so \"global minimum\" is treated
-                            as 0. In this situation, new pod with the same labelSelector
-                            cannot be scheduled, because computed skew will be 3(3
-                            - 0) if new Pod is scheduled to any of the three zones,
-                            it will violate MaxSkew. \n This is a beta field and requires
-                            the MinDomainsInPodTopologySpread feature gate to be enabled
-                            (enabled by default)."
-                          format: int32
-                          type: integer
-                        nodeAffinityPolicy:
-                          description: "NodeAffinityPolicy indicates how we will treat
-                            Pod's nodeAffinity/nodeSelector when calculating pod topology
-                            spread skew. Options are: - Honor: only nodes matching
-                            nodeAffinity/nodeSelector are included in the calculations.
-                            - Ignore: nodeAffinity/nodeSelector are ignored. All nodes
-                            are included in the calculations. \n If this value is
-                            nil, the behavior is equivalent to the Honor policy. This
-                            is a beta-level feature default enabled by the NodeInclusionPolicyInPodTopologySpread
-                            feature flag."
-                          type: string
-                        nodeTaintsPolicy:
-                          description: "NodeTaintsPolicy indicates how we will treat
-                            node taints when calculating pod topology spread skew.
-                            Options are: - Honor: nodes without taints, along with
-                            tainted nodes for which the incoming pod has a toleration,
-                            are included. - Ignore: node taints are ignored. All nodes
-                            are included. \n If this value is nil, the behavior is
-                            equivalent to the Ignore policy. This is a beta-level
-                            feature default enabled by the NodeInclusionPolicyInPodTopologySpread
-                            feature flag."
-                          type: string
-                        topologyKey:
-                          description: TopologyKey is the key of node labels. Nodes
-                            that have a label with this key and identical values are
-                            considered to be in the same topology. We consider each
-                            <key, value> as a "bucket", and try to put balanced number
-                            of pods into each bucket. We define a domain as a particular
-                            instance of a topology. Also, we define an eligible domain
-                            as a domain whose nodes meet the requirements of nodeAffinityPolicy
-                            and nodeTaintsPolicy. e.g. If TopologyKey is "kubernetes.io/hostname",
-                            each Node is a domain of that topology. And, if TopologyKey
-                            is "topology.kubernetes.io/zone", each zone is a domain
-                            of that topology. It's a required field.
-                          type: string
-                        whenUnsatisfiable:
-                          description: 'WhenUnsatisfiable indicates how to deal with
-                            a pod if it doesn''t satisfy the spread constraint. -
-                            DoNotSchedule (default) tells the scheduler not to schedule
-                            it. - ScheduleAnyway tells the scheduler to schedule the
-                            pod in any location, but giving higher precedence to topologies
-                            that would help reduce the skew. A constraint is considered
-                            "Unsatisfiable" for an incoming pod if and only if every
-                            possible node assignment for that pod would violate "MaxSkew"
-                            on some topology. For example, in a 3-zone cluster, MaxSkew
-                            is set to 1, and pods with the same labelSelector spread
-                            as 3/1/1: | zone1 | zone2 | zone3 | | P P P |   P   |   P   |
-                            If WhenUnsatisfiable is set to DoNotSchedule, incoming
-                            pod can only be scheduled to zone2(zone3) to become 3/2/1(3/1/2)
-                            as ActualSkew(2-1) on zone2(zone3) satisfies MaxSkew(1).
-                            In other words, the cluster can still be imbalanced, but
-                            scheduler won''t make it *more* imbalanced. It''s a required
-                            field.'
-                          type: string
-                      required:
-                      - maxSkew
-                      - topologyKey
-                      - whenUnsatisfiable
-                      type: object
-                    type: array
+                            type: array
+                          requiredDuringSchedulingIgnoredDuringExecution:
+                            properties:
+                              nodeSelectorTerms:
+                                items:
+                                  properties:
+                                    matchExpressions:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchFields:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                type: array
+                            required:
+                            - nodeSelectorTerms
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                      podAffinity:
+                        properties:
+                          preferredDuringSchedulingIgnoredDuringExecution:
+                            items:
+                              properties:
+                                podAffinityTerm:
+                                  properties:
+                                    labelSelector:
+                                      properties:
+                                        matchExpressions:
+                                          items:
+                                            properties:
+                                              key:
+                                                type: string
+                                              operator:
+                                                type: string
+                                              values:
+                                                items:
+                                                  type: string
+                                                type: array
+                                            required:
+                                            - key
+                                            - operator
+                                            type: object
+                                          type: array
+                                        matchLabels:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                      type: object
+                                      x-kubernetes-map-type: atomic
+                                    namespaceSelector:
+                                      properties:
+                                        matchExpressions:
+                                          items:
+                                            properties:
+                                              key:
+                                                type: string
+                                              operator:
+                                                type: string
+                                              values:
+                                                items:
+                                                  type: string
+                                                type: array
+                                            required:
+                                            - key
+                                            - operator
+                                            type: object
+                                          type: array
+                                        matchLabels:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                      type: object
+                                      x-kubernetes-map-type: atomic
+                                    namespaces:
+                                      items:
+                                        type: string
+                                      type: array
+                                    topologyKey:
+                                      type: string
+                                  required:
+                                  - topologyKey
+                                  type: object
+                                weight:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - podAffinityTerm
+                              - weight
+                              type: object
+                            type: array
+                          requiredDuringSchedulingIgnoredDuringExecution:
+                            items:
+                              properties:
+                                labelSelector:
+                                  properties:
+                                    matchExpressions:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                namespaceSelector:
+                                  properties:
+                                    matchExpressions:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                namespaces:
+                                  items:
+                                    type: string
+                                  type: array
+                                topologyKey:
+                                  type: string
+                              required:
+                              - topologyKey
+                              type: object
+                            type: array
+                        type: object
+                      podAntiAffinity:
+                        properties:
+                          preferredDuringSchedulingIgnoredDuringExecution:
+                            items:
+                              properties:
+                                podAffinityTerm:
+                                  properties:
+                                    labelSelector:
+                                      properties:
+                                        matchExpressions:
+                                          items:
+                                            properties:
+                                              key:
+                                                type: string
+                                              operator:
+                                                type: string
+                                              values:
+                                                items:
+                                                  type: string
+                                                type: array
+                                            required:
+                                            - key
+                                            - operator
+                                            type: object
+                                          type: array
+                                        matchLabels:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                      type: object
+                                      x-kubernetes-map-type: atomic
+                                    namespaceSelector:
+                                      properties:
+                                        matchExpressions:
+                                          items:
+                                            properties:
+                                              key:
+                                                type: string
+                                              operator:
+                                                type: string
+                                              values:
+                                                items:
+                                                  type: string
+                                                type: array
+                                            required:
+                                            - key
+                                            - operator
+                                            type: object
+                                          type: array
+                                        matchLabels:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                      type: object
+                                      x-kubernetes-map-type: atomic
+                                    namespaces:
+                                      items:
+                                        type: string
+                                      type: array
+                                    topologyKey:
+                                      type: string
+                                  required:
+                                  - topologyKey
+                                  type: object
+                                weight:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - podAffinityTerm
+                              - weight
+                              type: object
+                            type: array
+                          requiredDuringSchedulingIgnoredDuringExecution:
+                            items:
+                              properties:
+                                labelSelector:
+                                  properties:
+                                    matchExpressions:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                namespaceSelector:
+                                  properties:
+                                    matchExpressions:
+                                      items:
+                                        properties:
+                                          key:
+                                            type: string
+                                          operator:
+                                            type: string
+                                          values:
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                namespaces:
+                                  items:
+                                    type: string
+                                  type: array
+                                topologyKey:
+                                  type: string
+                              required:
+                              - topologyKey
+                              type: object
+                            type: array
+                        type: object
+                    type: object
                 type: object
               redis:
-                description: 'Defines desired state of cache resources'
+                description: "DEPRECATED: Redis is no longer used by EDA. This entire section is ignored. EDA now uses dispatcherd (backed by PostgreSQL) for task queuing. It will be removed in a future apiVersion."
                 properties:
                   redis_secret:
-                    description: Secret where the redis configuration can be found. Set this to us your own external Redis cache. If not specified, this secret will be generated and EDA will not create a managed Redis pod.
+                    description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA."
                     type: string
                   replicas:
-                    description: 'Defines Redis Deployment replicas'
+                    description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA."
                     format: int32
                     type: integer
                     default: 1
@@ -4640,10 +4348,10 @@ spec:
                   node_selector:
                     additionalProperties:
                       type: string
-                    description: NodeSelector for the EDA pods.
+                    description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA."
                     type: object
                   resource_requirements:
-                    description: Resource requirements for the Redis container
+                    description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA."
                     properties:
                       claims:
                         description: "Claims lists the names of resources, defined
@@ -4690,8 +4398,7 @@ spec:
                         type: object
                     type: object
                   strategy:
-                    description: The deployment strategy to use to replace existing
-                      pods with new ones.
+                    description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA."
                     properties:
                       rollingUpdate:
                         description: 'Rolling update config params. Present only if
@@ -4741,7 +4448,7 @@ spec:
                         type: string
                     type: object
                   tolerations:
-                    description: Node tolerations for the EDA pods.
+                    description: "DEPRECATED: This field is ignored. Redis is no longer used by EDA."
                     items:
                       description: The pod this Toleration is attached to tolerates
                         any taint that matches the triple <key,value,effect> using

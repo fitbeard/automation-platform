@@ -497,6 +497,9 @@ spec:
                       x-kubernetes-preserve-unknown-fields: true
                   type: object
                 type: array
+              idle_deployment:
+                description: Scale down deployments to put the MCP Server into an idle state
+                type: boolean
           status:
             description: Status defines the observed state of AnsibleMCPConnect
             x-kubernetes-preserve-unknown-fields: true

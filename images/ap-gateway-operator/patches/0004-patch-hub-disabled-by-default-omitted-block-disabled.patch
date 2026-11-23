@@ -1,0 +1,25 @@
+From 414294e5ed9cf156fa0ec70eaa54126a4a25547c Mon Sep 17 00:00:00 2001
+From: AAP Rebuild <aap-rebuild-bot@localhost>
+Date: Sun, 22 Nov 2026 01:27:47 +0200
+Subject: [PATCH 4/5] patch: hub disabled by default (omitted block = disabled)
+
+---
+ roles/common/tasks/determine_if_enabled.yml | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/roles/common/tasks/determine_if_enabled.yml b/roles/common/tasks/determine_if_enabled.yml
+index 1e38ab9..17057cb 100644
+--- a/roles/common/tasks/determine_if_enabled.yml
++++ b/roles/common/tasks/determine_if_enabled.yml
+@@ -19,11 +19,6 @@
+     - hub is defined
+     - hub.disabled is not defined or not hub.disabled
+ 
+-- name: Set hub as enabled if no hub is defined
+-  ansible.builtin.set_fact:
+-    _hub_enabled: true
+-  when: hub is not defined
+-
+ - name: Determine if eda is enabled (existing or new)
+   ansible.builtin.set_fact:
+     _eda_enabled: true

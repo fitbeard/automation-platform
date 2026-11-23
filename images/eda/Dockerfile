@@ -77,11 +77,12 @@ RUN sed -i '/^django-ansible-base/,/^\]/d' pyproject.toml && \
 # Install runtime tools
 RUN pip install --no-cache-dir gunicorn daphne
 
-# CVE bumps — residual critical/high from `docker scout` on the clean 1.2.15
-# build (reset 2026-11). 1.2.15's poetry.lock already carries sqlparse 0.6.0 and
-# azure-core 1.41.0 (last wave's seds for those now no-op → dropped). These
-# force-upgrade the transitives still pinned vulnerable in the lock. Each clears
-# its finding with a stable, wheel-installable fix.
+# CVE bumps — residual critical/high from `docker scout`. Re-audited on the clean
+# eda-server:1.3.15 build (2026-11-22): **0C / 10H**, and these `>=` floors
+# still clear every fixable finding (django/requests/jinja2/certifi no longer
+# appear in the scan). The 10 residual highs are all documented deferrals below
+# (twisted pre-release, cryptography cap, oauthlib major, ecdsa no-fix) — 1.3.15
+# introduced no new actionable CVEs, so the block is unchanged from 1.2.15.
 #   django   5.2.9  -> 5.2.17 (5H: CVE-2026-1287/-1207 SQLi, -3902 auth-bypass,
 #            -33034 DoS, +1; 5.2.17 = AWX 4.7.20 SRPM baseline, kept in parity)
 #   click    8.1.3  -> 8.3.3  (1H)

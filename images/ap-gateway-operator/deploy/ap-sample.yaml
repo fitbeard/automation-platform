@@ -36,18 +36,47 @@ spec:
   #     value: false
   #   - setting: SESSION_COOKIE_SECURE
   #     value: false
+  #
+  # JWT/OIDC workload-identity feature (controller tech-preview). `feature_flags`
+  # is a GLOBAL AAP toggle: the gateway-op fans each entry out to every component
+  # (controller / eda / ...) as an extra_setting and into the gateway settings.
+  # For the controller, FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED lets it mint OIDC
+  # JWTs for credentials carrying a `workload_identity_token` field (federated
+  # auth to external services instead of static secrets). The DAB feature_flags
+  # app bridges the setting into django-flags.
+  #
+  # INSTALL-TIME flag: the django-flags DB row (dab_feature_flags.AAPFlag) is
+  # seeded from the setting on the FIRST `awx-manage migrate`, so declaring it
+  # here BEFORE the initial deploy makes both the setting path AND flag_enabled()
+  # evaluate True. On an ALREADY-running cluster the controller's DB row persists
+  # at its old value — re-seed once inside an awx-web/awx-task pod:
+  #   awx-manage shell -c "from django.apps import apps; from ansible_base.feature_flags.utils import load_feature_flags; apps.get_model('dab_feature_flags','AAPFlag').objects.filter(name='FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED').delete(); load_feature_flags()"
+  feature_flags:
+    FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED: true
+  # Defaults metrics ON (common/determine_if_enabled.yml sets
+  # _metrics_enabled=true whenever `metrics` is defined, and `metrics:
+  # {disabled: false}` is a role default so it is ALWAYS defined). The metrics
+  # component deploys a MetricsService CR (automationmetricsservice.ansible.com)
+  # whose operator/CRD we do NOT ship (automation-metrics-operator is out of
+  # scope). Left enabled, the gateway-op reconcile fails on "Deploy
+  # MetricsService" (no matches for kind). Disable it explicitly.
+  metrics:
+    disabled: true
   controller:
     name: awx
   eda:
     name: eda
     # Trim replicas to 1 across the board — defaults are 2 for
-    # default_worker / activation_worker / scheduler (api, event_stream,
-    # ui already default to 1). Saves ~5 pods on a kind cluster.
+    # default_worker / activation_worker (api, ui default to 1). Saves pods on
+    # a kind cluster. NOTE: (eda 1.3.x) REMOVED the `scheduler`
+    # component (strict CRD decoding rejects it) and dropped Redis (dispatcherd
+    # on PostgreSQL now) — components are api/ui/default_worker/activation_worker/
+    # event_stream.
     default_worker:
       replicas: 1
     activation_worker:
       replicas: 1
-    scheduler:
+    event_stream:
       replicas: 1
 
 # ---

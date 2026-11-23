@@ -40,12 +40,26 @@ set -euo pipefail
 
 # --- Configuration -----------------------------------------------------------
 
-BUNDLE_IMAGE="${BUNDLE_IMAGE:-registry.redhat.io/ansible-automation-platform/platform-operator-bundle:2.6-1794615097-source}"
-REGISTRY_HOST="${BUNDLE_IMAGE%%/*}"   # login target, derived from the image path
-SUBPROJECT="${SUBPROJECT:-gateway-operator}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${SCRIPT_DIR}/src"
+
+# The gateway operator ships as its own per-component "-source" BSI OCI
+# (aap-gateway-operator wrapper) — simpler than the 2.6 platform-operator-bundle
+# nested extraction. Still NO public upstream + NO license, so (as 2.6) we extract
+# the -source, unpatch the downstream renames, apply our patches, and gitignore
+# the verbatim CRDs. Pull it locally first (registry.redhat.io auth).
+# shellcheck source=extract-source-oci.sh
+. "${SCRIPT_DIR}/extract-source-oci.sh"
+GATEWAY_OP_SOURCE_IMAGE="${GATEWAY_OP_SOURCE_IMAGE:-registry.redhat.io/ansible-automation-platform-27/gateway-rhel9-operator:2.7-1794275922-source}"
+GATEWAY_OP_SUBPATH="aap-gateway-operator"
+REGISTRY_HOST="${GATEWAY_OP_SOURCE_IMAGE%%/*}"
+GATEWAY_OP_EXTRACT_DIR="${SCRIPT_DIR}/.src-extract"
+# ansible-operator base image. Unlike awx/eda (whose devel-HEAD Dockerfiles are
+# v1.42.3-native = ubi-minimal + microdnf), the gateway-op -source Dockerfile is
+# written for v1.40.0 = full-ubi + **dnf** (it `dnf install`s python3.12-psycopg2).
+# So we keep its NATIVE v1.40.0 — pinning v1.42.3 (microdnf, no dnf) breaks the
+# build (exit 127). Native base per source = no pkg-manager swap.
+BASE_IMAGE_TAG="${BASE_IMAGE_TAG:-v1.40.0}"
 
 RE_EXTRACT=0
 PREP_ONLY=0
@@ -65,8 +79,8 @@ for arg in "$@"; do
     esac
 done
 
-VERSION="${VERSION:-2.6-1794615097}"
-IMAGE_NAME="${IMAGE_NAME:-quay.io/your-namespace/ap-gateway-operator}"
+VERSION="${VERSION:-2.7-1794591068.0}"
+IMAGE_NAME="${IMAGE_NAME:-quay.io/fitbeard/automation-platform/ap-gateway-operator}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 BUILDER_NAME="aap-operators-multiarch"
@@ -79,112 +93,27 @@ for cmd in docker tar; do
     fi
 done
 
-# --- Phase 1: pull the source bundle (idempotent) ----------------------------
-
-if ! docker image inspect "$BUNDLE_IMAGE" >/dev/null 2>&1; then
-    echo "==> Pulling $BUNDLE_IMAGE"
-    echo "    Authentication required: docker login ${REGISTRY_HOST}"
-    if ! docker pull "$BUNDLE_IMAGE"; then
-        cat >&2 <<EOF
-
-ERROR: docker pull failed.
-
-If you see "unauthorized" or "authentication required":
-  1. docker login ${REGISTRY_HOST}
-  2. Use your vendor account credentials, or a registry
-     service-account token
-  3. Re-run this script.
-
-EOF
-        exit 1
-    fi
-else
-    echo "==> Bundle already present locally: $BUNDLE_IMAGE"
-fi
-
-# --- Phase 2: extract gateway-operator/ from the source bundle ---------------
+# --- Phase 1+2+3: extract aap-gateway-operator/ from the per-component -source
 
 if [[ -d "$SRC_DIR" && $RE_EXTRACT -eq 0 ]]; then
     echo "==> src/ already populated — skipping extraction (pass --re-extract to refresh)"
     echo "    src/ contains $(find "$SRC_DIR" -type f | wc -l | tr -d ' ') files"
-    SKIP_EXTRACT=1
 else
-    SKIP_EXTRACT=0
-fi
-
-if [[ $SKIP_EXTRACT -eq 0 ]]; then
-
-WORK_DIR="$(mktemp -d -t aap-bundle-XXXXX)"
-trap 'rm -rf "$WORK_DIR"' EXIT
-
-echo "==> Saving bundle image to a tarball (working dir: $WORK_DIR)"
-docker save "$BUNDLE_IMAGE" -o "$WORK_DIR/bundle.tar"
-
-echo "==> Unpacking image tarball"
-tar -xf "$WORK_DIR/bundle.tar" -C "$WORK_DIR"
-
-# Bundle is a Build-Source-Image (BSI):
-#   outer layers contain `extra_src_dir/extra-src-<sha>.tar`
-#   that inner tar contains either:
-#     - go-module dependency caches (large, ~150 MB) — NOT what we want
-#     - `ansible-automation-platform-operator-bundle-container-<sha>.tar.gz`
-#       which expands to a directory containing every sub-operator's
-#       source tree (this is what we want)
-echo "==> Locating the source layer (BSI extra_src_dir with operator-bundle tarball)"
-SOURCE_LAYER=""
-for blob in "$WORK_DIR"/blobs/sha256/*; do
-    [[ -f "$blob" ]] || continue
-    # Layer must contain ./extra_src_dir/extra-src-*.tar at top-level
-    tar -tzf "$blob" 2>/dev/null | grep -q '^\./extra_src_dir/extra-src-.*\.tar$' || continue
-    # Inner tarball must reference an operator-bundle source archive
-    if tar -xzOf "$blob" 2>/dev/null | tar -t 2>/dev/null | grep -q 'ansible-automation-platform-operator-bundle-container-.*\.tar\.gz$'; then
-        SOURCE_LAYER="$blob"
-        echo "    found: $(basename "$blob") ($(du -h "$blob" | cut -f1))"
-        break
+    echo "==> Extracting ${GATEWAY_OP_SUBPATH}/ from ${GATEWAY_OP_SOURCE_IMAGE##*/}"
+    if ! docker image inspect "$GATEWAY_OP_SOURCE_IMAGE" >/dev/null 2>&1; then
+        echo "    Not present locally — pull it first: docker login ${REGISTRY_HOST} && docker pull ${GATEWAY_OP_SOURCE_IMAGE}" >&2
+        exit 1
     fi
-done
-
-if [[ -z "$SOURCE_LAYER" ]]; then
-    echo "ERROR: could not find a layer containing the operator-bundle source archive" >&2
-    exit 1
+    GW_OP_WRAPPER=$(extract_source_oci "$GATEWAY_OP_SOURCE_IMAGE" "$GATEWAY_OP_EXTRACT_DIR")
+    GW_OP_SRC="${GW_OP_WRAPPER}/${GATEWAY_OP_SUBPATH}"
+    [[ -d "${GW_OP_SRC}/roles" ]] || { echo "ERROR: ${GATEWAY_OP_SUBPATH}/ not found in the -source image" >&2; exit 1; }
+    rm -rf "$SRC_DIR"; mkdir -p "$SRC_DIR"
+    cp -a "${GW_OP_SRC}/." "$SRC_DIR/"
+    # Pin the ansible-operator base image (the -source Dockerfile uses v1.40.0).
+    if sed --version >/dev/null 2>&1; then SEDI=(sed -i); else SEDI=(sed -i ''); fi
+    "${SEDI[@]}" -E "s|(operator-framework/ansible-operator):v[0-9]+\.[0-9]+\.[0-9]+|\1:${BASE_IMAGE_TAG}|" "${SRC_DIR}/Dockerfile"
+    echo "==> src/ ready ($(find "$SRC_DIR" -type f | wc -l | tr -d ' ') files); base $(grep -m1 '^FROM' "${SRC_DIR}/Dockerfile" | awk '{print $2}')"
 fi
-
-echo "==> Unpacking source layer"
-EXTRACT_DIR="$WORK_DIR/extracted"
-mkdir -p "$EXTRACT_DIR"
-tar -xzf "$SOURCE_LAYER" -C "$EXTRACT_DIR"
-
-INNER_TAR=("$EXTRACT_DIR"/extra_src_dir/extra-src-*.tar)
-[[ -f "${INNER_TAR[0]}" ]] || { echo "ERROR: extra-src-*.tar missing" >&2; exit 1; }
-
-echo "==> Unpacking BSI inner tar"
-tar -xf "${INNER_TAR[0]}" -C "$EXTRACT_DIR"
-
-OPERATOR_BUNDLE_TGZ=("$EXTRACT_DIR"/ansible-automation-platform-operator-bundle-container-*.tar.gz)
-[[ -f "${OPERATOR_BUNDLE_TGZ[0]}" ]] || { echo "ERROR: operator-bundle tarball missing" >&2; exit 1; }
-
-echo "==> Unpacking operator-bundle tarball"
-tar -xzf "${OPERATOR_BUNDLE_TGZ[0]}" -C "$EXTRACT_DIR"
-
-BUNDLE_ROOT=$(find "$EXTRACT_DIR" -maxdepth 2 -type d -name 'ansible-automation-platform-operator-bundle-container-*' | head -1)
-[[ -d "$BUNDLE_ROOT" ]] || { echo "ERROR: bundle root directory not found" >&2; exit 1; }
-
-if [[ ! -d "${BUNDLE_ROOT}/${SUBPROJECT}" ]]; then
-    echo "ERROR: ${SUBPROJECT}/ not found inside bundle. Available subprojects:" >&2
-    ls "$BUNDLE_ROOT" >&2
-    exit 1
-fi
-
-# --- Phase 3: copy to src/ ---------------------------------------------------
-
-echo "==> Copying ${SUBPROJECT}/ to $(realpath --relative-to="$PWD" "$SRC_DIR" 2>/dev/null || echo "$SRC_DIR")/"
-rm -rf "$SRC_DIR"
-mkdir -p "$SRC_DIR"
-cp -R "${BUNDLE_ROOT}/${SUBPROJECT}/." "$SRC_DIR/"
-
-echo "==> src/ ready ($(find "$SRC_DIR" -type f | wc -l | tr -d ' ') files)"
-
-fi  # end if [[ $SKIP_EXTRACT -eq 0 ]]
 
 # --- Phase 4: inverse-downstreamify (sed-based bulk renames) ----------------
 # unpatch.sh undoes select downstreamify transformations so the

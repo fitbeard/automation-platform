@@ -6,7 +6,7 @@ on:
       tag:
         description: 'Set image tag'
         required: true
-        default: '2.6-1794615097'
+        default: '2.7-1794591068.0'
 
 jobs:
   image:

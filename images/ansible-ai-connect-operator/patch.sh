@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Apply our local patches on top of the ansible-ai-connect-operator checkout
-# produced by build.sh.
+# Apply our local patches on top of the upstream ansible-ai-connect-operator
+# checkout produced by build.sh (git clone + checkout of the pinned baseline).
 #
 # Patches live in ./patches/ as git-format-patch mailbox files. They're
 # applied with `git am --3way`, which means:
@@ -11,6 +11,10 @@
 #   - If upstream drift prevents a clean apply, `--3way` attempts a
 #     merge; if that fails too, `git am` aborts cleanly and leaves src/
 #     in a reviewable state (run `git am --abort` to reset).
+#
+# Think of this as our `downstreamify.sh` — but transparent, git-native,
+# and designed to surface upstream drift loudly instead of silently
+# corrupting files with sed substitutions.
 #
 # Usage:
 #   ./patch.sh                        # Apply all patches/*.patch

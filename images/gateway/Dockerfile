@@ -10,8 +10,19 @@ RUN dnf install -y nodejs && npm install -g n && n 20
 
 # Copy platform UI source (placed in build context by build.sh)
 COPY aap-ui/ /tmp/aap-ui/
-RUN cd /tmp/aap-ui && npm ci
+# `npm install` (not `npm ci`): the vendor's Cachi2-wired lockfile was stripped
+# in build.sh so deps resolve from the public npm registry (.npmrc guards kept).
+RUN cd /tmp/aap-ui && npm install
 RUN cd /tmp/aap-ui/platform && NODE_OPTIONS=--max-old-space-size=8192 npx vite build
+
+# Debrand the built platform UI bundle: collapse "<Vendor> <Brand> Automation Platform"
+# -> "Automation Platform" across the compiled JS/CSS and the i18next locale JSON
+# (locales/<lang>/translation.json). Operating on the built output catches product-name
+# strings from platform components, the embedded AWX/EDA/Hub UIs (e.g. the HashiCorp
+# Vault OIDC config panel), and any pulled in from bundled dependencies, in one
+# structural pass. The mark is never written here.
+RUN find /tmp/aap-ui/platform/dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.json' -o -name '*.map' \) \
+      -exec sed -i -E 's|([A-Z][a-z]+ )+Automation Platform|Automation Platform|g' {} +
 
 # =============================================================================
 # Python Builder stage: install Python deps into a venv
@@ -92,7 +103,11 @@ RUN cd /tmp/gateway-src && /opt/aap_gateway/venv/bin/pip --no-cache-dir install 
 FROM docker.io/rockylinux/rockylinux:9
 ARG PYTHON=python3.12
 
-RUN dnf -y update --security --bugfix && \
+# Full `dnf -y update` (not just --security): Rocky's security errata metadata is
+# incomplete, so --security left curl-minimal/libcurl-minimal/expat/vim-minimal at
+# vulnerable base versions (CVE scan flagged ~48 High). A full update pulls the
+# patched -44.el9_9.1 rpms.
+RUN dnf -y update && \
     dnf install -y epel-release && \
     dnf module install -y nginx:1.26/common && \
     dnf install -y \

@@ -1,0 +1,58 @@
+From 0c60ddcbcb7f826099dd12e7cf01fe666dffbc34 Mon Sep 17 00:00:00 2001
+From: AAP Rebuild <aap-rebuild-bot@localhost>
+Date: Sun, 22 Nov 2026 22:08:15 +0200
+Subject: [PATCH] patch: MCP-only watches.yaml (drop Lightspeed + MCP
+ backup/restore)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The upstream operator binary carries four watches: AnsibleAIConnect
+(Lightspeed/chatbot/Wisdom — the enterprise stack this rebuild skips),
+AnsibleMCPConnect (the MCP server we ship), and AnsibleMCPConnectBackup /
+AnsibleMCPConnectRestore (backup/restore of a stateless service we don't run).
+
+We deploy only the MCP server, so list just that one watch. Dropping the others
+avoids controller-runtime 'no matches for kind' spam for CRDs we deliberately
+don't snapshot (only mcpconnect.ansible.com_ansiblemcpconnects.yaml is snapshotted
+to crds/). Supersedes the old 2.6 git-am patches 0001 (drop-chatbot-watch, now
+subsumed here) and 0002 (enableServiceLinks, now upstream).
+---
+ watches.yaml | 23 +++--------------------
+ 1 file changed, 3 insertions(+), 20 deletions(-)
+
+diff --git a/watches.yaml b/watches.yaml
+index 5920248..4b32e5f 100644
+--- a/watches.yaml
++++ b/watches.yaml
+@@ -1,27 +1,10 @@
+ ---
+-# Use the 'create api' subcommand to add watches to this file.
+-- version: v1alpha1
+-  group: aiconnect.ansible.com
+-  kind: AnsibleAIConnect
+-  playbook: playbooks/ansibleaiconnect.yml
+-  markUnsafe: true
++# MCP-only (debranded rebuild): the upstream operator binary also carries
++# AnsibleAIConnect (Lightspeed) + AnsibleMCPConnect Backup/Restore watches; we
++# deploy only the MCP server, so this file lists just that one kind.
+ - version: v1alpha1
+   group: mcpconnect.ansible.com
+   kind: AnsibleMCPConnect
+   playbook: playbooks/ansiblemcpconnect.yml
+   markUnsafe: true
+-
+-- version: v1alpha1
+-  group: mcpconnect.ansible.com
+-  kind: AnsibleMCPConnectBackup
+-  role: mcpbackup
+-  snakeCaseParameters: False
+-  markUnsafe: true
+-
+-- version: v1alpha1
+-  group: mcpconnect.ansible.com
+-  kind: AnsibleMCPConnectRestore
+-  role: mcprestore
+-  snakeCaseParameters: False
+-  markUnsafe: true
+ #+kubebuilder:scaffold:watch
