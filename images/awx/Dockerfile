@@ -44,10 +44,6 @@ RUN dnf -y update && dnf install -y 'dnf-command(config-manager)' && \
     xmlsec1-devel \
     xmlsec1-openssl-devel
 
-# Add github.com to known hosts
-RUN mkdir -p ~/.ssh && chmod 0700 ~/.ssh
-RUN ssh-keyscan github.com > ~/.ssh/known_hosts
-
 # System pip is only used to install the `build` frontend below; the awx venv
 # gets its own pip via ensurepip. No CVE version floor here (reset 2026-09) —
 # re-audit the image and re-add a pin only if a finding requires it.
